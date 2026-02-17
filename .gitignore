@@ -1,0 +1,30 @@
+# --- ESP32 (ESP-IDF / PlatformIO) ---
+build/
+.pio/
+managed_components/
+sdkconfig.old
+sdkconfig.ci
+dependencies.lock
+__pycache__/
+
+# --- STM32 (CubeIDE / Keil) ---
+Debug/
+Release/
+*.bin
+*.elf
+*.hex
+*.list
+*.map
+*.o
+*.obj
+.settings/
+.mxproject
+*.uvoptx
+*.uvguix.*
+
+# --- IDE & System ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
