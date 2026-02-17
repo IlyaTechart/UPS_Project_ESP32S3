@@ -41,6 +41,11 @@ typedef union{
 	uint8_t buffer[1024];
 }TransferBuffer_t;
 
+
+
+
+
+
 // Объявление функции инициализации
 void spi_slave_init(void);
 

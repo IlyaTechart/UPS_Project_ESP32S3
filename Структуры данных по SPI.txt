@@ -1,0 +1,105 @@
+#include <stdint.h>
+
+// 1. Обязательная упаковка! ПЛИС выдает байты плотно, ESP32 должна читать так же.
+#pragma pack(push, 1)
+
+// --- Группа 1: Статусы (Регистры 10001-10011) ---
+typedef struct {
+    uint16_t grid_status;      // 10001: Состояние сети
+    uint16_t bypass_status;    // 10002: Состояние байпаса
+    uint16_t rectifier_status; // 10003: Выпрямитель
+    uint16_t inverter_status;  // 10004: Инвертор
+    // ... можно добавить остальные статусные регистры
+    uint16_t battery_status;   // 10010: Состояние АКБ
+    uint16_t ups_mode;         // 10011: Режим работы
+} GroupStatus_t;
+
+// --- Группа 2: Аварии (Регистры 10012-10022) ---
+typedef struct {
+    uint16_t err_low_in_vol;   // 10012: Низкое входное U
+    uint16_t err_high_dc;      // 10013: Высокое U шины DC
+    uint16_t err_low_bat;      // 10014: Низкий заряд АКБ
+    // ... остальные аварии
+    uint16_t err_inv_overheat; // 10022: Перегрев инвертора
+} GroupAlarms_t;
+
+// --- Группа 3: Входные параметры (30001-30010) ---
+// Передаем как int, множители (x0.1) применим в ESP32
+typedef struct {
+    uint16_t v_in_AB;          // 30001 (x0.1 V)
+    uint16_t v_in_BC;          // 30002 (x0.1 V)
+    uint16_t v_in_CA;          // 30003 (x0.1 V)
+    uint16_t v_bypass_A;       // 30004
+    uint16_t v_bypass_B;       // 30005
+    uint16_t v_bypass_C;       // 30006
+    uint16_t i_in_A;           // 30007 (x0.1 A)
+    uint16_t i_in_B;           // 30008
+    uint16_t i_in_C;           // 30009
+    uint16_t freq_in;          // 30010 (x0.01 Hz) !!! Внимание, тут x0.01
+} GroupInput_t;
+
+// --- Группа 4: Выходные параметры (30011-30027) ---
+typedef struct {
+    uint16_t v_out_A;          // 30011
+    uint16_t v_out_B;          // 30012
+    uint16_t v_out_C;          // 30013
+    uint16_t freq_out;         // 30014 (x0.01 Hz)
+    uint16_t i_out_A;          // 30015
+    // ... токи B, C
+    uint16_t p_active_A;       // 30018 (kW x0.1)
+    // ... мощности ...
+    uint16_t load_percent_A;   // 30024 (x0.1 %)
+} GroupOutput_t;
+
+// --- Группа 5: АКБ (30028-30033) ---
+typedef struct {
+    uint16_t bat_voltage;      // 30028 (x0.1 V)
+    uint16_t bat_capacity;     // 30029 (Ah x1)
+    uint16_t bat_groups;       // 30030
+    uint16_t dc_bus_voltage;   // 30031 (x0.1 V)
+    int16_t  bat_current;      // 30032 (x0.1 A) ! Тут может быть SIGNED (заряд/разряд)
+    uint16_t backup_time;      // 30033 (min)
+} GroupBattery_t;
+
+// === ГЛАВНАЯ СТРУКТУРА ПАКЕТА SPI ===
+typedef struct {
+    uint32_t start_marker;     // Например 0xAA55AA55 (для проверки синхронизации)
+    uint32_t packet_counter;   // Счетчик пакетов (чтобы видеть пропуски)
+    
+    // Вложенные структуры данных
+    GroupStatus_t  status;
+    GroupAlarms_t  alarms;
+    GroupInput_t   input;
+    GroupOutput_t  output;
+    GroupBattery_t battery;
+
+    uint32_t crc32;            // Контрольная сумма всего пакета
+} FpgaToEspPacket_t;
+
+#pragma pack(pop)
+
+
+
+### Как с этим работать### 
+// 1. Приводим тип
+FpgaToEspPacket_t *pkt = (FpgaToEspPacket_t *)rx_buffer;
+
+// 2. Проверяем CRC
+if (calculate_crc32(pkt, sizeof(FpgaToEspPacket_t) - 4) != pkt->crc32) {
+    ESP_LOGE("SPI", "CRC Error!");
+    return;
+}
+
+// 3. Используем данные (преобразуем множители)
+float voltage_AB = pkt->input.v_in_AB * 0.1f;    // Умножаем на 0.1 как в Excel
+float freq_in    = pkt->input.freq_in * 0.01f;   // Умножаем на 0.01
+float current_A  = pkt->input.i_in_A * 0.1f;
+
+// 4. Логируем
+ESP_LOGI("UPS", "Vin: %.1f V, Freq: %.2f Hz", voltage_AB, freq_in);
+
+// 5. Обработка битовых флагов статуса
+// В Excel написано: 1 - Авария, 0 - Норма
+if (pkt->status.grid_status == 1) {
+    ESP_LOGW("UPS", "Grid Failure!"); 
+}

@@ -40,10 +40,20 @@ void IRAM_ATTR my_post_setup_cb(spi_slave_transaction_t *trans);
 void IRAM_ATTR my_post_trans_cb(spi_slave_transaction_t *trans);
 static void spi_driver_task(void *pvParameters); // Внутренняя задача драйвера
 void memory_allocate(void);
+static void GPIO_Init_SPI2(void);
 
 void spi_slave_init(void) {
 
      memory_allocate();
+
+    GPIO_Init_SPI2();
+
+    gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(GPIO_CS, GPIO_PULLUP_ONLY);
+
+    gpio_io_config_t gpio_io_config = {0};
+    gpio_get_io_config(GPIO_CS, &gpio_io_config);
 
     // 1. Создаем очередь
     spi_evt_queue = xQueueCreate(2, sizeof(spi_message_t));
@@ -73,10 +83,6 @@ void spi_slave_init(void) {
         .post_setup_cb = my_post_setup_cb, 
         .post_trans_cb = my_post_trans_cb
     };
-
-    gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(GPIO_CS, GPIO_PULLUP_ONLY);
 
     // ВАЖНО: Используем SPI2_HOST (RCV_HOST определен в хедере)
     esp_err_t ret = spi_slave_initialize(RCV_HOST, &buscfg, &slvcfg, DMA_CHAN);
@@ -235,5 +241,40 @@ void memory_allocate(void)
 //     multi_heap_info_t info = {0};
 //     heap_caps_get_info(&info, MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
 //     ESP_LOGI(TAG, "DMA-capable SPIRAM: total=%zu, free=%zu", info.total_allocated_bytes + info.total_free_bytes, info.total_free_bytes);
+}
+
+static void GPIO_Init_SPI2(void)
+{
+    gpio_reset_pin(GPIO_MOSI);
+    gpio_reset_pin(GPIO_MISO);
+    gpio_reset_pin(GPIO_SCLK);
+    gpio_reset_pin(GPIO_CS);
+
+    // 2. Настраиваем структуру конфигурации
+    gpio_config_t io_conf = {};
+
+    // --- Настройка входов (CS, CLK, MOSI) ---
+    // В режиме Slave ESP32 только СЛУШАЕТ эти линии.
+    // Мы отключаем подтяжки (pull-up/down), чтобы проверить, 
+    // сможет ли ПЛИС сама управлять линией.
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_INPUT; 
+    io_conf.pin_bit_mask = (1ULL << GPIO_CS) | (1ULL << GPIO_SCLK) | (1ULL << GPIO_MOSI);
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en = 0;   // Отключаем подтяжку, пусть ПЛИС рулит уровнем
+    gpio_config(&io_conf);
+
+    // --- Настройка выхода (MISO) ---
+    // Это единственная линия, которую драйвит ESP32 в режиме Slave
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1ULL << GPIO_MISO);
+    io_conf.pull_up_en = 0;
+    gpio_config(&io_conf);
+    
+    // Уставим MISO в 0 для начала
+    gpio_set_level(GPIO_MISO, 0);
+
+    printf("DEBUG: Pins configured as raw GPIO inputs (Floating).\n");
+
 }
 
