@@ -1,40 +1,34 @@
-#pragma once
+/*
+ * wi-fi_hande.h
+ *
+ *  Created on: 17 февр. 2026 г.
+ *      Author: q
+ */
 
-#include "esp_err.h"
-#include "wifi_control.h"
+#ifndef INC_MSP_H_
+#define INC_MSP_H_
 
-#define GPIO_MOSI 11
-#define GPIO_MISO 9  
-#define GPIO_SCLK 12
-#define GPIO_CS   10
+#include<stdio.h>
+#include<stdint.h>
+#include<stdlib.h>
+#include<string.h>
 
-#define GPIO_HANDSHAKE 13
 
-#define RCV_HOST    SPI2_HOST
-#define DMA_CHAN    SPI_DMA_CH_AUTO
 
-#define BUFFER_SIZE  1
-
-#define KILOBYTES_IN_MEGABYTE 1024
-#define BYTES_IN_KILOBYTE     1024
-
-#define CONVERT_TO_BYTES_FORM_KILOBYTE(x) ((x) * BYTES_IN_KILOBYTE)
-
-#define CURRENT_SIZE    CONVERT_TO_BYTES_FORM_KILOBYTE(BUFFER_SIZE)    
-     
-typedef struct{
-    uint8_t *pssram_tx_buffer;
-    uint8_t *pssram_rx_buffer;
-    uint8_t *innternal_tx_buffer;
-    uint8_t *innternal_rx_buffer;
-} spi_buffers_t;
-
-// Структура нашего сообщения (для очереди)
 typedef struct {
-    uint8_t data[CURRENT_SIZE]; // Буфер данных
-    uint32_t len;        // Длина
-} spi_message_t;
+    // Вход (Левая колонка)
+    float v_in_a; float v_in_b; float v_in_c; // Напряжение
+    float c_in_a; float c_in_b; float c_in_c; // Ток
+    float f_in_a; float f_in_b; float f_in_c; // Частота
 
+    // Выход (Правая колонка)
+    float p_act_a; float p_act_b; float p_act_c; // Активная мощность (kW)
+    float p_rea_a; float p_rea_b; float p_rea_c; // Реактивная мощность (kVar)
+    float load_a;  float load_b;  float load_c;  // Нагрузка (%)
+
+    int fan_time;
+    int module_id;
+} UpsData_t;
 
 #pragma pack(push, 1)
 
@@ -143,9 +137,7 @@ typedef union {
 
 
 
+void SetVelueInStruckt(ModulData_t *ups_data);
 
-// Объявление функции инициализации
-void spi_slave_init(void);
 
-// Объявление задачи обработки (если вы запускаете её через xTaskCreate в main)
-void spi_processing_task(void *pvParameters);
+#endif /* INC_MSP_H_ */

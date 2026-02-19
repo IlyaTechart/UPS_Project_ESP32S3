@@ -13,6 +13,7 @@
 //#include "esp_cache.h"
 
 static const char *TAG = "SPI_HANDLER";
+static const char *TAG_SPI = "TX_SPI";
 
 // Очередь должна быть определена в .c файле
 static QueueHandle_t spi_evt_queue;
@@ -25,7 +26,7 @@ SemaphoreHandle_t sema_for_driverTask;
 volatile spi_buffers_t spi_buffers;
 //EXT_RAM_BSS_ATTR volatile spi_message_t msg;
 volatile spi_message_t msg;
-volatile TransferBuffer_t TransferBuffer;
+volatile ModulData_t ModulData;
 
 
 //Переменные для логов 
@@ -41,6 +42,7 @@ void IRAM_ATTR my_post_trans_cb(spi_slave_transaction_t *trans);
 static void spi_driver_task(void *pvParameters); // Внутренняя задача драйвера
 void memory_allocate(void);
 static void GPIO_Init_SPI2(void);
+static void PrintUpsPacket(volatile FpgaToEspPacket_t *pkt);
 
 void spi_slave_init(void) {
 
@@ -184,30 +186,10 @@ void spi_processing_task(void *pvParameters) {
         *(msg.data + 1023) = '\0';
         if((xQueueReceive(spi_evt_queue, &msg, portMAX_DELAY)) == pdPASS) 
         {
-            memcpy(TransferBuffer.buffer, msg.data, CURRENT_SIZE);
-            // Фаза A
-            ESP_LOGI(TAG, "Phase A: Vin=%.2f V, Iin=%.2f A | P_Act=%.2f kW, P_Rea=%.2f kVar",
-                TransferBuffer.ups_data[0].v_in_a,
-                TransferBuffer.ups_data[0].c_in_a,
-                TransferBuffer.ups_data[0].p_act_a,
-                TransferBuffer.ups_data[0].p_rea_a
-            );
+            memcpy(ModulData.Tx_Buffer, msg.data, msg.len);
 
-            // Фаза B
-            ESP_LOGI(TAG, "Phase B: Vin=%.2f V, Iin=%.2f A | P_Act=%.2f kW, P_Rea=%.2f kVar",
-                TransferBuffer.ups_data[0].v_in_b,
-                TransferBuffer.ups_data[0].c_in_b,
-                TransferBuffer.ups_data[0].p_act_b,
-                TransferBuffer.ups_data[0].p_rea_b
-            );
+            PrintUpsPacket(&ModulData.packet);
 
-            // Фаза C
-            ESP_LOGI(TAG, "Phase C: Vin=%.2f V, Iin=%.2f A | P_Act=%.2f kW, P_Rea=%.2f kVar",
-                TransferBuffer.ups_data[0].v_in_c,
-                TransferBuffer.ups_data[0].c_in_c,
-                TransferBuffer.ups_data[0].p_act_c,
-                TransferBuffer.ups_data[0].p_rea_c
-            );
             //ESP_LOG_BUFFER_HEX(TAG, msg.data, sizeof(msg.data));
         }
 
@@ -278,3 +260,67 @@ static void GPIO_Init_SPI2(void)
 
 }
 
+// Функция для красивого вывода данных (принимает указатель на структуру с float)
+static void PrintUpsPacket(volatile FpgaToEspPacket_t *pkt) {
+    if (pkt->start_marker != 0xAA55AA55) { // Проверка маркера (если он у вас такой)
+        ESP_LOGW(TAG_SPI, "Invalid Start Marker: 0x%08lX", pkt->start_marker);
+        // Можно не выходить, если хотите видеть мусор
+    }
+
+    ESP_LOGI(TAG_SPI, "=== UPS DATA (Cnt: %lu) ===", pkt->packet_counter);
+
+    // 1. Статусы (uint16_t)
+    ESP_LOGI(TAG_SPI, "[STATUS] Grid:%d | Byp:%d | Rect:%d | Inv:%d | PwrInv:%d | PwrByp:%d | Sync:%d",
+             pkt->status.grid_status, pkt->status.bypass_grid_status,
+             pkt->status.rectifier_status, pkt->status.inverter_status,
+             pkt->status.pwr_via_inverter, pkt->status.pwr_via_bypass,
+             pkt->status.sync_status);
+    
+    ESP_LOGI(TAG_SPI, "[STATUS] Load:%d | Sound:%d | BatSt:%d | UpsMode:%d",
+             pkt->status.load_mode, pkt->status.sound_alarm,
+             pkt->status.battery_status, pkt->status.ups_mode);
+
+    // 2. Аварии (uint16_t)
+    ESP_LOGI(TAG_SPI, "[ALARM] LowIn:%d | HighDC:%d | LowBat:%d | NoBat:%d | InvF:%d | InvOC:%d",
+             pkt->alarms.err_low_input_vol, pkt->alarms.err_high_dc_bus,
+             pkt->alarms.err_low_bat_charge, pkt->alarms.err_bat_not_conn,
+             pkt->alarms.err_inv_fault, pkt->alarms.err_inv_overcurrent);
+
+    // 3. Вход (Float)
+    ESP_LOGI(TAG_SPI, "[INPUT] V_in: A=%.1f B=%.1f C=%.1f | V_byp: A=%.1f B=%.1f C=%.1f",
+             pkt->input.v_in_AB, pkt->input.v_in_BC, pkt->input.v_in_CA,
+             pkt->input.v_bypass_A, pkt->input.v_bypass_B, pkt->input.v_bypass_C);
+    
+    ESP_LOGI(TAG_SPI, "[INPUT] I_in: A=%.1f B=%.1f C=%.1f | Freq: %.2f Hz",
+             pkt->input.i_in_A, pkt->input.i_in_B, pkt->input.i_in_C,
+             pkt->input.freq_in);
+
+    // 4. Выход (Float)
+    ESP_LOGI(TAG_SPI, "[OUTPUT] V_out: A=%.1f B=%.1f C=%.1f | Freq: %.2f Hz",
+             pkt->output.v_out_A, pkt->output.v_out_B, pkt->output.v_out_C,
+             pkt->output.freq_out);
+
+    ESP_LOGI(TAG_SPI, "[OUTPUT] I_out: A=%.1f B=%.1f C=%.1f",
+             pkt->output.i_out_A, pkt->output.i_out_B, pkt->output.i_out_C);
+    
+    ESP_LOGI(TAG_SPI, "[OUTPUT] P_Act: A=%.1f B=%.1f C=%.1f kW",
+             pkt->output.p_active_A, pkt->output.p_active_B, pkt->output.p_active_C);
+    
+    ESP_LOGI(TAG_SPI, "[OUTPUT] P_App: A=%.1f B=%.1f C=%.1f kVA",
+             pkt->output.p_apparent_A, pkt->output.p_apparent_B, pkt->output.p_apparent_C);
+    
+    ESP_LOGI(TAG_SPI, "[OUTPUT] Load: A=%.1f%% B=%.1f%% C=%.1f%% | Events: %.0f",
+             pkt->output.load_pct_A, pkt->output.load_pct_B, pkt->output.load_pct_C,
+             pkt->output.event_count);
+
+    // 5. Батарея (Float)
+    ESP_LOGI(TAG_SPI, "[BAT] Vol: %.1f V | Cap: %.0f Ah | Grp: %.0f | DC: %.1f V",
+             pkt->battery.bat_voltage, pkt->battery.bat_capacity,
+             pkt->battery.bat_groups_count, pkt->battery.dc_bus_voltage);
+    
+    ESP_LOGI(TAG_SPI, "[BAT] Cur: %.1f A | Backup: %.0f min",
+             pkt->battery.bat_current, pkt->battery.backup_time);
+
+    ESP_LOGI(TAG_SPI, "[CRC] 0x%08lX", pkt->crc32);
+    ESP_LOGI(TAG_SPI, "=================================");
+}
