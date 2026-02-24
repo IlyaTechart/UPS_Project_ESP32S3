@@ -18,6 +18,8 @@
 
 #define EXAMPLE_ESP_WIFI_SSID      "PED"
 #define EXAMPLE_ESP_WIFI_PASS      "kt7DMstt"
+// #define EXAMPLE_ESP_WIFI_SSID      "TP-Link_CDED"
+// #define EXAMPLE_ESP_WIFI_PASS      "95257006"
 #define EXAMPLE_MAX_RETRY          5
 #define LED_GPIO                   13 
 
@@ -28,330 +30,324 @@ static int s_led_state = 0;
 // Ссылка на глобальные данные (определены в main.c или msp.c)
 extern volatile ModulData_t ModulData;
 
-/* --- 1. HTML СТРАНИЦА (Упакована в C-строку) --- */
-/* Стиль подогнан под скриншот: светло-голубой фон, вкладки, таблица данных */
-// static const char* index_html = 
-// "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>UPS Monitor</title>"
-// "<style>"
-// "body { font-family: Arial, sans-serif; background-color: #99ccff; margin: 0; padding: 20px; display: flex; justify-content: center; height: 100vh; }"
-// ".container { width: 900px; background-color: white; border: 1px solid #777; height: 85vh; display: flex; flex-direction: column; box-shadow: 2px 2px 10px rgba(0,0,0,0.2); }"
-// /* Tabs */
-// ".tabs { display: flex; background-color: #f0f0f0; border-bottom: 1px solid #aaa; }"
-// ".tab { padding: 8px 20px; border-right: 1px solid #aaa; background-color: #e0e0e0; color: #555; cursor: pointer; font-size: 14px; }"
-// ".tab.active { background-color: white; font-weight: bold; color: black; border-bottom: 1px solid white; margin-bottom: -1px; }"
-// /* Content */
-// ".content { flex: 1; display: flex; padding: 0; overflow-y: auto; }"
-// ".col { width: 50%; border-right: 1px solid #ddd; }"
-// ".row { display: flex; justify-content: space-between; padding: 5px 10px; border-bottom: 1px solid #eee; font-size: 13px; align-items: center; }"
-// ".row:nth-child(odd) { background-color: #fcfcfc; }"
-// ".row:hover { background-color: #eef7ff; }"
-// ".lbl { color: #333; }"
-// ".val { font-weight: bold; color: #000; }"
-// /* Footer */
-// ".footer { background-color: #5b9bd5; color: white; padding: 8px 15px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; border-top: 1px solid #3377aa; }"
-// ".btn-grp { display: flex; align-items: center; gap: 10px; }"
-// "input { width: 40px; text-align: center; border: none; padding: 2px; }"
-// "button { border: 1px solid #fff; background: #eee; cursor: pointer; padding: 2px 10px; font-weight: bold; color: #333; }"
-// "button:hover { background: #fff; }"
-// "</style></head><body>"
-
-// "<div class=\"container\">"
-// "  <div class=\"tabs\">"
-// "    <div class=\"tab\">Unit Status</div>"
-// "    <div class=\"tab active\">Module Data</div>"
-// "  </div>"
-  
-// "  <div class=\"content\">"
-//     /* ЛЕВАЯ КОЛОНКА */
-// "    <div class=\"col\">"
-// "      <div class=\"row\"><span class=\"lbl\">Main Input Voltage Phase A(V)</span><span class=\"val\" id=\"v_in_a\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Main Input Voltage Phase B(V)</span><span class=\"val\" id=\"v_in_b\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Main Input Voltage Phase C(V)</span><span class=\"val\" id=\"v_in_c\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Main Input Current Phase A(A)</span><span class=\"val\" id=\"c_in_a\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Main Input Current Phase B(A)</span><span class=\"val\" id=\"c_in_b\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Main Input Current Phase C(A)</span><span class=\"val\" id=\"c_in_c\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Main Input Frequency Phase A(Hz)</span><span class=\"val\" id=\"f_in_a\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Main Input Frequency Phase B(Hz)</span><span class=\"val\" id=\"f_in_b\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Main Input Frequency Phase C(Hz)</span><span class=\"val\" id=\"f_in_c\">---</span></div>"
-// "    </div>"
-//     /* ПРАВАЯ КОЛОНКА */
-// "    <div class=\"col\">"
-// "      <div class=\"row\"><span class=\"lbl\">Output Active Power Phase A(kW)</span><span class=\"val\" id=\"p_act_a\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Output Active Power Phase B(kW)</span><span class=\"val\" id=\"p_act_b\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Output Active Power Phase C(kW)</span><span class=\"val\" id=\"p_act_c\">---</span></div>"
-//       /* Реактивная мощность рассчитывается в C коде */
-// "      <div class=\"row\"><span class=\"lbl\">Output Reactive Power Phase A(kVar)</span><span class=\"val\" id=\"p_rea_a\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Output Reactive Power Phase B(kVar)</span><span class=\"val\" id=\"p_rea_b\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Output Reactive Power Phase C(kVar)</span><span class=\"val\" id=\"p_rea_c\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Output Load Percentage Phase A(%)</span><span class=\"val\" id=\"load_a\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Output Load Percentage Phase B(%)</span><span class=\"val\" id=\"load_b\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Output Load Percentage Phase C(%)</span><span class=\"val\" id=\"load_c\">---</span></div>"
-// "      <div class=\"row\"><span class=\"lbl\">Fan Running Time (hour)</span><span class=\"val\" id=\"fan_time\">---</span></div>"
-// "    </div>"
-// "  </div>"
-
-// "  <div class=\"footer\">"
-// "    <div class=\"btn-grp\">"
-// "      <span>Module ID</span>"
-// "      <input type=\"number\" id=\"mid_input\" value=\"8\">"
-// "      <button onclick=\"setId()\">Set</button>"
-// "      <button onclick=\"toggleLed()\">Toggle LED</button>"
-// "    </div>"
-// "    <div id=\"status\">Connected. Uptime: 0s</div>"
-// "  </div>"
-// "</div>"
-
-// "<script>"
-// "function toggleLed() { fetch('/api/cmd', {method: 'POST', body: 'toggle_led'}); }"
-// "function setId() { fetch('/api/cmd', {method: 'POST', body: 'set_id:' + document.getElementById('mid_input').value}); }"
-// "function update() {"
-// "  fetch('/api/status').then(r => r.json()).then(d => {"
-//      // Input Volts
-// "    document.getElementById('v_in_a').innerText = d.in.va.toFixed(1);"
-// "    document.getElementById('v_in_b').innerText = d.in.vb.toFixed(1);"
-// "    document.getElementById('v_in_c').innerText = d.in.vc.toFixed(1);"
-//      // Input Amps
-// "    document.getElementById('c_in_a').innerText = d.in.ca.toFixed(1);"
-// "    document.getElementById('c_in_b').innerText = d.in.cb.toFixed(1);"
-// "    document.getElementById('c_in_c').innerText = d.in.cc.toFixed(1);"
-//      // Input Freq
-// "    document.getElementById('f_in_a').innerText = d.in.fa.toFixed(2);"
-// "    document.getElementById('f_in_b').innerText = d.in.fb.toFixed(2);"
-// "    document.getElementById('f_in_c').innerText = d.in.fc.toFixed(2);"
-//      // Output Active Power
-// "    document.getElementById('p_act_a').innerText = d.out.pa.toFixed(1);"
-// "    document.getElementById('p_act_b').innerText = d.out.pb.toFixed(1);"
-// "    document.getElementById('p_act_c').innerText = d.out.pc.toFixed(1);"
-//      // Output Reactive Power
-// "    document.getElementById('p_rea_a').innerText = d.out.qa.toFixed(1);"
-// "    document.getElementById('p_rea_b').innerText = d.out.qb.toFixed(1);"
-// "    document.getElementById('p_rea_c').innerText = d.out.qc.toFixed(1);"
-//      // Load
-// "    document.getElementById('load_a').innerText = d.out.la.toFixed(1);"
-// "    document.getElementById('load_b').innerText = d.out.lb.toFixed(1);"
-// "    document.getElementById('load_c').innerText = d.out.lc.toFixed(1);"
-//      // Misc
-// "    document.getElementById('fan_time').innerText = d.misc.fan;"
-// "    if(document.activeElement.id !== 'mid_input') document.getElementById('mid_input').value = d.misc.id;"
-// "    document.getElementById('status').innerText = 'Connected. Uptime: ' + d.misc.up + 's';"
-// "  }).catch(e => document.getElementById('status').innerText = 'Disconnected');"
-// "}"
-// "setInterval(update, 1000);"
-// "update();"
-// "</script></body></html>";
-
 static const char* index_html = 
-"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>UPS Monitor</title>"
+"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Modular UPS</title>"
 "<style>"
-"body { font-family: Arial, sans-serif; background-color: #99ccff; margin: 0; padding: 20px; display: flex; justify-content: center; height: 100vh; }"
-".container { width: 900px; background-color: white; border: 1px solid #777; height: 85vh; display: flex; flex-direction: column; box-shadow: 2px 2px 10px rgba(0,0,0,0.2); }"
-"/* Tabs */"
-".tabs { display: flex; background-color: #f0f0f0; border-bottom: 1px solid #aaa; }"
-".tab { padding: 8px 20px; border-right: 1px solid #aaa; background-color: #e0e0e0; color: #555; cursor: pointer; font-size: 14px; }"
-".tab.active { background-color: white; font-weight: bold; color: black; border-bottom: 1px solid white; margin-bottom: -1px; }"
-"/* Content */"
-".content { flex: 1; display: flex; padding: 0; overflow-y: auto; }"
-".col { width: 50%; border-right: 1px solid #ddd; }"
-".row { display: flex; justify-content: space-between; padding: 5px 10px; border-bottom: 1px solid #eee; font-size: 13px; align-items: center; }"
-".row:nth-child(odd) { background-color: #fcfcfc; }"
-".row:hover { background-color: #eef7ff; }"
-".lbl { color: #333; }"
-".val { font-weight: bold; color: #000; }"
-"</style>"
-"</head><body>"
+"body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #eef2f5; margin: 0; padding: 0; display: flex; justify-content: center; height: 100vh; }"
+".container { width: 95%; max-width: 1000px; background-color: white; height: 90vh; margin-top: 2vh; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }"
+/* Header */
+".header { background-color: #2c3e50; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; }"
+".header h2 { margin: 0; font-size: 20px; }"
+/* Tabs */
+".tabs { display: flex; background-color: #34495e; }"
+".tab { flex: 1; padding: 12px; text-align: center; cursor: pointer; color: #bdc3c7; border-bottom: 3px solid transparent; transition: 0.3s; }"
+".tab:hover { background-color: #3e5871; color: white; }"
+".tab.active { background-color: #ecf0f1; color: #2c3e50; border-bottom: 3px solid #3498db; font-weight: bold; }"
+/* Content Area */
+".content-wrapper { flex: 1; overflow-y: auto; padding: 20px; background-color: #ecf0f1; }"
+".tab-content { display: none; animation: fadeIn 0.3s; }"
+".tab-content.active { display: block; }"
+"@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }"
+/* Data Groups */
+".group-box { background: white; border-radius: 6px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }"
+".group-title { border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 10px; font-weight: bold; color: #3498db; text-transform: uppercase; font-size: 14px; }"
+".row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #eee; font-size: 14px; }"
+".row:last-child { border-bottom: none; }"
+".lbl { color: #555; }"
+".val { font-weight: bold; color: #333; }"
+/* Status Indicators */
+".badge { padding: 3px 8px; border-radius: 4px; font-size: 12px; color: white; }"
+".bg-ok { background-color: #27ae60; }"
+".bg-warn { background-color: #f39c12; }"
+".bg-err { background-color: #c0392b; }"
+/* Footer */
+".footer { background-color: #2c3e50; color: #bdc3c7; padding: 10px 20px; font-size: 12px; display: flex; justify-content: space-between; }"
+"</style></head><body>"
+
 "<div class=\"container\">"
-"<div class=\"tabs\">"
-"<div class=\"tab active\">STS</div>"
-"<div class=\"tab\">ECT</div>"
-"<div class=\"tab\">INV</div>"
+"  <div class=\"header\">"
+"    <h2>UPS Module Monitor</h2>"
+"    <div id=\"sys_status\" class=\"badge bg-warn\">Connecting...</div>"
+"  </div>"
+
+"  <div class=\"tabs\">"
+"    <div class=\"tab active\" onclick=\"openTab('rect')\">Rectifier (AC/DC)</div>"
+"    <div class=\"tab\" onclick=\"openTab('inv')\">Inverter (DC/AC)</div>"
+"    <div class=\"tab\" onclick=\"openTab('sts')\">Static Switch (STS)</div>"
+"  </div>"
+  
+"  <div class=\"content-wrapper\">"
+    
+    /* === TAB 1: RECTIFIER === */
+"    <div id=\"rect\" class=\"tab-content active\">"
+"      <div class=\"group-box\">"
+"        <div class=\"group-title\">Main Input (Mains)</div>"
+"        <div class=\"row\"><span class=\"lbl\">Voltage A/B/C (V)</span><span class=\"val\"><span id=\"v_in_ab\">-</span> / <span id=\"v_in_bc\">-</span> / <span id=\"v_in_ca\">-</span></span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Current A/B/C (A)</span><span class=\"val\"><span id=\"i_in_a\">-</span> / <span id=\"i_in_b\">-</span> / <span id=\"i_in_c\">-</span></span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Frequency (Hz)</span><span class=\"val\" id=\"freq_in\">-</span></div>"
+"      </div>"
+"      <div class=\"group-box\">"
+"        <div class=\"group-title\">Rectifier Status</div>"
+"        <div class=\"row\"><span class=\"lbl\">Operation State</span><span class=\"val\" id=\"rect_st\">-</span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Grid Status</span><span class=\"val\" id=\"grid_st\">-</span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Temp / Overheat</span><span class=\"val\" id=\"rect_temp_alarm\">-</span></div>"
+"      </div>"
+"    </div>"
+
+    /* === TAB 2: INVERTER === */
+"    <div id=\"inv\" class=\"tab-content\">"
+"      <div class=\"group-box\">"
+"        <div class=\"group-title\">Output Parameters</div>"
+"        <div class=\"row\"><span class=\"lbl\">Voltage A/B/C (V)</span><span class=\"val\"><span id=\"v_out_a\">-</span> / <span id=\"v_out_b\">-</span> / <span id=\"v_out_c\">-</span></span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Current A/B/C (A)</span><span class=\"val\"><span id=\"i_out_a\">-</span> / <span id=\"i_out_b\">-</span> / <span id=\"i_out_c\">-</span></span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Active Power (kW)</span><span class=\"val\"><span id=\"p_act_a\">-</span> / <span id=\"p_act_b\">-</span> / <span id=\"p_act_c\">-</span></span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Load (%)</span><span class=\"val\"><span id=\"load_a\">-</span> / <span id=\"load_b\">-</span> / <span id=\"load_c\">-</span></span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Frequency (Hz)</span><span class=\"val\" id=\"freq_out\">-</span></div>"
+"      </div>"
+"      <div class=\"group-box\">"
+"        <div class=\"group-title\">Battery & DC Bus</div>"
+"        <div class=\"row\"><span class=\"lbl\">DC Bus Voltage (V)</span><span class=\"val\" id=\"dc_bus\">-</span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Battery Voltage (V)</span><span class=\"val\" id=\"bat_v\">-</span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Battery Current (A)</span><span class=\"val\" id=\"bat_i\">-</span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Capacity / Backup</span><span class=\"val\"><span id=\"bat_cap\">-</span> Ah / <span id=\"bat_time\">-</span> min</span></div>"
+"      </div>"
+"      <div class=\"group-box\">"
+"        <div class=\"group-title\">Inverter Status</div>"
+"        <div class=\"row\"><span class=\"lbl\">State</span><span class=\"val\" id=\"inv_st\">-</span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Mode</span><span class=\"val\" id=\"ups_mode\">-</span></div>"
+"      </div>"
+"    </div>"
+
+    /* === TAB 3: STS (BYPASS) === */
+"    <div id=\"sts\" class=\"tab-content\">"
+"      <div class=\"group-box\">"
+"        <div class=\"group-title\">Bypass Input</div>"
+"        <div class=\"row\"><span class=\"lbl\">Voltage A/B/C (V)</span><span class=\"val\"><span id=\"v_bp_a\">-</span> / <span id=\"v_bp_b\">-</span> / <span id=\"v_bp_c\">-</span></span></div>"
+"      </div>"
+"      <div class=\"group-box\">"
+"        <div class=\"group-title\">Switch Status</div>"
+"        <div class=\"row\"><span class=\"lbl\">Sync Status</span><span class=\"val\" id=\"sync_st\">-</span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Power via Bypass</span><span class=\"val\" id=\"via_bp\">-</span></div>"
+"        <div class=\"row\"><span class=\"lbl\">Bypass Grid</span><span class=\"val\" id=\"bp_grid_st\">-</span></div>"
+"      </div>"
+"    </div>"
+"  </div>" // content-wrapper
+
+"  <div class=\"footer\">"
+"    <span>API Status: OK</span>"
+"    <span>Module FW: v1.0</span>"
+"  </div>"
 "</div>"
-"<div class=\"content\">"
-"<div class=\"col\">"
-"<div class=\"row\"><span class=\"lbl\">Сеть на входе:</span><span class=\"val\" id=\"grid_status\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Сеть байпаса:</span><span class=\"val\" id=\"bypass_grid_status\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Выпрямитель:</span><span class=\"val\" id=\"rectifier_status\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Инвертор:</span><span class=\"val\" id=\"inverter_status\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Питание через инвертор:</span><span class=\"val\" id=\"pwr_via_inverter\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Питание по байпасу:</span><span class=\"val\" id=\"pwr_via_bypass\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Синхронизация:</span><span class=\"val\" id=\"sync_status\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Режим нагрузки:</span><span class=\"val\" id=\"load_mode\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Звуковой сигнал:</span><span class=\"val\" id=\"sound_alarm\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Состояние АКБ:</span><span class=\"val\" id=\"battery_status\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Режим ИБП:</span><span class=\"val\" id=\"ups_mode\">-</span></div>"
-"</div>"
-"<div class=\"col\">"
-"<div class=\"row\"><span class=\"lbl\">Низкое напряжение на входе:</span><span class=\"val\" id=\"err_low_input_vol\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Высокое напряжение DC шины:</span><span class=\"val\" id=\"err_high_dc_bus\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Низкий заряд АКБ:</span><span class=\"val\" id=\"err_low_bat_charge\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">АКБ не подключены:</span><span class=\"val\" id=\"err_bat_not_conn\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Неисправность инвертора:</span><span class=\"val\" id=\"err_inv_fault\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Перегрузка инвертора:</span><span class=\"val\" id=\"err_inv_overcurrent\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Высокое напряжение на выходе:</span><span class=\"val\" id=\"err_high_out_vol\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Неисправность вентилятора:</span><span class=\"val\" id=\"err_fan_fault\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Требуется замена АКБ:</span><span class=\"val\" id=\"err_replace_bat\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Перегрев выпрямителя:</span><span class=\"val\" id=\"err_rect_overheat\">-</span></div>"
-"<div class=\"row\"><span class=\"lbl\">Перегрев инвертора:</span><span class=\"val\" id=\"err_inv_overheat\">-</span></div>"
-"</div>"
-"</div>"
-"</div>"
+
 "<script>"
-"let socket;"
-"function connectWebSocket() {"
-"    socket = new WebSocket('ws://' + window.location.hostname + '/ws');"
-"    socket.onmessage = function(event) {"
-"        const data = JSON.parse(event.data);"
-"        for (const key in data) {"
-"            const el = document.getElementById(key);"
-"            if (el) el.textContent = data[key];"
-"        }"
-"    };"
-"    socket.onclose = function() {"
-"        setTimeout(connectWebSocket, 3000);"
-"    };"
+"function openTab(name) {"
+"  var i; var x = document.getElementsByClassName('tab-content');"
+"  for (i = 0; i < x.length; i++) { x[i].classList.remove('active'); }"
+"  var tabs = document.getElementsByClassName('tab');"
+"  for (i = 0; i < tabs.length; i++) { tabs[i].classList.remove('active'); }"
+"  document.getElementById(name).classList.add('active');"
+// Костыль, чтобы найти кнопку таба по тексту или порядку, но проще через event.currentTarget
+// Здесь упростим логику выделения активного таба
+"  event.currentTarget.classList.add('active');"
 "}"
-"window.onload = connectWebSocket;"
-"</script>"
-"</body></html>";
+
+"function setTxt(id, val, fixed) {"
+"  var el = document.getElementById(id);"
+"  if(el) el.innerText = (fixed !== undefined) ? Number(val).toFixed(fixed) : val;"
+"}"
+
+"function setBadge(id, val, txtOk, txtErr) {"
+"  var el = document.getElementById(id);"
+"  if(!el) return;"
+"  if(val == 0 || val == '0') { el.innerText = txtOk; el.className = 'val badge bg-ok'; }"
+"  else { el.innerText = txtErr; el.className = 'val badge bg-err'; }"
+"}"
+"function setBool(id, val, txtTrue, txtFalse) {"
+"  var el = document.getElementById(id);"
+"  if(el) el.innerText = val ? txtTrue : txtFalse;"
+"}"
+
+"function update() {"
+"  fetch('/api/status').then(r => r.json()).then(d => {"
+     // System Status
+"    var stEl = document.getElementById('sys_status');"
+"    stEl.innerText = 'Connected'; stEl.className = 'badge bg-ok';"
+     
+     // --- RECTIFIER TAB ---
+"    setTxt('v_in_ab', d.input.v_ab, 1);"
+"    setTxt('v_in_bc', d.input.v_bc, 1);"
+"    setTxt('v_in_ca', d.input.v_ca, 1);"
+"    setTxt('i_in_a', d.input.i_a, 1); setTxt('i_in_b', d.input.i_b, 1); setTxt('i_in_c', d.input.i_c, 1);"
+"    setTxt('freq_in', d.input.freq, 2);"
+     // Status logic: 0=Norm, 1=Alarm for grid
+"    setBadge('grid_st', d.status.grid, 'OK', 'FAIL');" 
+"    setBool('rect_st', d.status.rect, 'Running', 'Stopped');"
+"    setBadge('rect_temp_alarm', d.alarms.rect_hot, 'Normal', 'OVERHEAT');"
+
+     // --- INVERTER TAB ---
+"    setTxt('v_out_a', d.output.v_a, 1); setTxt('v_out_b', d.output.v_b, 1); setTxt('v_out_c', d.output.v_c, 1);"
+"    setTxt('i_out_a', d.output.i_a, 1); setTxt('i_out_b', d.output.i_b, 1); setTxt('i_out_c', d.output.i_c, 1);"
+"    setTxt('p_act_a', d.output.p_act_a, 1); setTxt('p_act_b', d.output.p_act_b, 1); setTxt('p_act_c', d.output.p_act_c, 1);"
+"    setTxt('load_a', d.output.load_a, 0); setTxt('load_b', d.output.load_b, 0); setTxt('load_c', d.output.load_c, 0);"
+"    setTxt('freq_out', d.output.freq, 2);"
+"    setTxt('dc_bus', d.bat.dc_bus, 1);"
+"    setTxt('bat_v', d.bat.v, 1);"
+"    setTxt('bat_i', d.bat.curr, 1);"
+"    setTxt('bat_cap', d.bat.cap, 0);"
+"    setTxt('bat_time', d.bat.time, 0);"
+"    setBool('inv_st', d.status.inv, 'Running', 'Stopped');"
+"    setBool('ups_mode', d.status.mode, 'Battery Mode', 'Line Mode');"
+
+     // --- STS TAB ---
+"    setTxt('v_bp_a', d.input.v_bp_a, 1); setTxt('v_bp_b', d.input.v_bp_b, 1); setTxt('v_bp_c', d.input.v_bp_c, 1);"
+"    setBadge('sync_st', d.status.sync, 'Synchronized', 'Async');" // Note: Check struct logic (0=Sync usually?)
+"    setBool('via_bp', d.status.via_bp, 'Yes', 'No');"
+"    setBadge('bp_grid_st', d.status.bp_grid, 'OK', 'FAIL');"
+
+"  }).catch(e => {"
+"    var stEl = document.getElementById('sys_status');"
+"    stEl.innerText = 'Disconnected'; stEl.className = 'badge bg-err';"
+"  });"
+"}"
+"setInterval(update, 100);"
+"update();"
+"</script></body></html>";
+
+/* --- 4. ОБРАБОТЧИК WEBSOCKET (JSON) --- */
+static esp_err_t ws_handler(httpd_req_t *req)
+{
+    // 1. Если это рукопожатие (первое соединение)
+    if (req->method == HTTP_GET) {
+        ESP_LOGI(TAG, "WebSocket Handshake done");
+        return ESP_OK;
+    }
+
+    // 2. Это входящий пакет данных от браузера
+    httpd_ws_frame_t ws_pkt;
+    uint8_t *buf = NULL;
+    memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
+    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
+
+    // Считываем, что нам прислал браузер (нужно для очистки буфера приема)
+    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
+    if (ret != ESP_OK) return ret;
+
+    if (ws_pkt.len > 0) {
+        buf = calloc(1, ws_pkt.len + 1);
+        if (buf == NULL) return ESP_ERR_NO_MEM;
+        ws_pkt.payload = buf;
+        httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+        // Тут можно прочитать buf, если нужно (например команды управления), 
+        // но пока мы просто реагируем на любой пакет отправкой статуса.
+        free(buf);
+    }
+
+    // 3. Формируем JSON (используем вашу функцию)
+    char *json_response = generate_ups_json_string();
+    if (json_response == NULL) {
+        return ESP_FAIL;
+    }
+
+    // 4. Отправляем JSON обратно через WebSocket
+    httpd_ws_frame_t response_pkt;
+    memset(&response_pkt, 0, sizeof(httpd_ws_frame_t));
+    response_pkt.payload = (uint8_t*)json_response;
+    response_pkt.len = strlen(json_response);
+    response_pkt.type = HTTPD_WS_TYPE_TEXT;
+
+    ret = httpd_ws_send_frame(req, &response_pkt);
+
+    // 5. Обязательно чистим память JSON!
+    free(json_response);
+
+    return ret;
+}
 
 
 /* --- 3. ФУНКЦИЯ ФОРМИРОВАНИЯ JSON --- */
 /* Создает JSON строку из структуры данных. Caller должен освободить память (free). */
-// char* generate_ups_json_string(void)
-// {
-//     // Безопасно берем данные (если структура меняется в прерывании, лучше использовать копию или мьютекс)
-//     // Здесь предполагаем, что чтение float атомарно или не критично для отображения
-//     FpgaToEspPacket_t *pkt = (FpgaToEspPacket_t*)&ModulData.packet;
-
-//     cJSON *root = cJSON_CreateObject();
-
-//     // --- Группа INPUT ---
-//     cJSON *in = cJSON_CreateObject();
-//     cJSON_AddNumberToObject(in, "va", pkt->input.v_in_AB);
-//     cJSON_AddNumberToObject(in, "vb", pkt->input.v_in_BC);
-//     cJSON_AddNumberToObject(in, "vc", pkt->input.v_in_CA);
-//     cJSON_AddNumberToObject(in, "ca", pkt->input.i_in_A);
-//     cJSON_AddNumberToObject(in, "cb", pkt->input.i_in_B);
-//     cJSON_AddNumberToObject(in, "cc", pkt->input.i_in_C);
-//     // Частота одна на вход, но в HTML 3 строки, продублируем или выведем разные если есть
-//     cJSON_AddNumberToObject(in, "fa", pkt->input.freq_in);
-//     cJSON_AddNumberToObject(in, "fb", pkt->input.freq_in); 
-//     cJSON_AddNumberToObject(in, "fc", pkt->input.freq_in);
-//     cJSON_AddItemToObject(root, "in", in);
-
-//     // --- Группа OUTPUT ---
-//     cJSON *out = cJSON_CreateObject();
-//     // Активная мощность
-//     cJSON_AddNumberToObject(out, "pa", pkt->output.p_active_A);
-//     cJSON_AddNumberToObject(out, "pb", pkt->output.p_active_B);
-//     cJSON_AddNumberToObject(out, "pc", pkt->output.p_active_C);
-    
-//     // Реактивная мощность (Q = sqrt(S^2 - P^2))
-//     // S = Apparent, P = Active.
-//     float qa = sqrtf(fmaxf(0, powf(pkt->output.p_apparent_A, 2) - powf(pkt->output.p_active_A, 2)));
-//     float qb = sqrtf(fmaxf(0, powf(pkt->output.p_apparent_B, 2) - powf(pkt->output.p_active_B, 2)));
-//     float qc = sqrtf(fmaxf(0, powf(pkt->output.p_apparent_C, 2) - powf(pkt->output.p_active_C, 2)));
-
-//     cJSON_AddNumberToObject(out, "qa", qa);
-//     cJSON_AddNumberToObject(out, "qb", qb);
-//     cJSON_AddNumberToObject(out, "qc", qc);
-
-//     cJSON_AddNumberToObject(out, "la", pkt->output.load_pct_A);
-//     cJSON_AddNumberToObject(out, "lb", pkt->output.load_pct_B);
-//     cJSON_AddNumberToObject(out, "lc", pkt->output.load_pct_C);
-//     cJSON_AddItemToObject(root, "out", out);
-
-//     // --- Группа MISC ---
-//     cJSON *misc = cJSON_CreateObject();
-//     // Fan time нет в структуре пакета, берем event_count или 0 как заглушку
-//     cJSON_AddNumberToObject(misc, "fan", (int)pkt->output.event_count); 
-//     cJSON_AddNumberToObject(misc, "id", 8); // ID модуля, можно вынести в переменную
-//     cJSON_AddNumberToObject(misc, "up", esp_timer_get_time() / 1000000);
-//     cJSON_AddItemToObject(root, "misc", misc);
-
-//     // Печать в строку
-//     char *json_str = cJSON_PrintUnformatted(root);
-//     cJSON_Delete(root); // Удаляем объект JSON из памяти
-
-//     return json_str;
-// }
 char* generate_ups_json_string(void)
 {
-    // Безопасно берем данные (если структура меняется в прерывании, лучше использовать копию или мьютекс)
-    FpgaToEspPacket_t *pkt = (FpgaToEspPacket_t*)&ModulData.packet;
+     cJSON *root = cJSON_CreateObject();
+    
+    // --- 1. STATUS ---
+    cJSON *status = cJSON_CreateObject();
+    cJSON_AddNumberToObject(status, "grid", ModulData.packet.status.grid_status);
+    cJSON_AddNumberToObject(status, "bp_grid", ModulData.packet.status.bypass_grid_status);
+    cJSON_AddNumberToObject(status, "rect", ModulData.packet.status.rectifier_status);
+    cJSON_AddNumberToObject(status, "inv", ModulData.packet.status.inverter_status);
+    cJSON_AddNumberToObject(status, "via_inv", ModulData.packet.status.pwr_via_inverter);
+    cJSON_AddNumberToObject(status, "via_bp", ModulData.packet.status.pwr_via_bypass);
+    cJSON_AddNumberToObject(status, "sync", ModulData.packet.status.sync_status);
+    cJSON_AddNumberToObject(status, "load_m", ModulData.packet.status.load_mode);
+    cJSON_AddNumberToObject(status, "bat", ModulData.packet.status.battery_status);
+    cJSON_AddNumberToObject(status, "mode", ModulData.packet.status.ups_mode);
+    cJSON_AddItemToObject(root, "status", status);
 
-    cJSON *root = cJSON_CreateObject();
+    // --- 2. ALARMS ---
+    cJSON *alarms = cJSON_CreateObject();
+    cJSON_AddNumberToObject(alarms, "low_in", ModulData.packet.alarms.err_low_input_vol);
+    cJSON_AddNumberToObject(alarms, "hi_dc", ModulData.packet.alarms.err_high_dc_bus);
+    cJSON_AddNumberToObject(alarms, "low_bat", ModulData.packet.alarms.err_low_bat_charge);
+    cJSON_AddNumberToObject(alarms, "no_bat", ModulData.packet.alarms.err_bat_not_conn);
+    cJSON_AddNumberToObject(alarms, "inv_flt", ModulData.packet.alarms.err_inv_fault);
+    cJSON_AddNumberToObject(alarms, "inv_oc", ModulData.packet.alarms.err_inv_overcurrent);
+    cJSON_AddNumberToObject(alarms, "hi_out", ModulData.packet.alarms.err_high_out_vol);
+    cJSON_AddNumberToObject(alarms, "fan", ModulData.packet.alarms.err_fan_fault);
+    cJSON_AddNumberToObject(alarms, "bat_repl", ModulData.packet.alarms.err_replace_bat);
+    cJSON_AddNumberToObject(alarms, "rect_hot", ModulData.packet.alarms.err_rect_overheat);
+    cJSON_AddNumberToObject(alarms, "inv_hot", ModulData.packet.alarms.err_inv_overheat);
+    cJSON_AddItemToObject(root, "alarms", alarms);
 
-    // --- Статусы (GroupStatus_t) ---
-    cJSON_AddNumberToObject(root, "grid_status", pkt->status.grid_status);
-    cJSON_AddNumberToObject(root, "bypass_grid_status", pkt->status.bypass_grid_status);
-    cJSON_AddNumberToObject(root, "rectifier_status", pkt->status.rectifier_status);
-    cJSON_AddNumberToObject(root, "inverter_status", pkt->status.inverter_status);
-    cJSON_AddNumberToObject(root, "pwr_via_inverter", pkt->status.pwr_via_inverter);
-    cJSON_AddNumberToObject(root, "pwr_via_bypass", pkt->status.pwr_via_bypass);
-    cJSON_AddNumberToObject(root, "sync_status", pkt->status.sync_status);
-    cJSON_AddNumberToObject(root, "load_mode", pkt->status.load_mode);
-    cJSON_AddNumberToObject(root, "sound_alarm", pkt->status.sound_alarm);
-    cJSON_AddNumberToObject(root, "battery_status", pkt->status.battery_status);
-    cJSON_AddNumberToObject(root, "ups_mode", pkt->status.ups_mode);
+    // --- 3. INPUT (Rectifier Input + Bypass) ---
+    cJSON *input = cJSON_CreateObject();
+    cJSON_AddNumberToObject(input, "v_ab", ModulData.packet.input.v_in_AB);
+    cJSON_AddNumberToObject(input, "v_bc", ModulData.packet.input.v_in_BC);
+    cJSON_AddNumberToObject(input, "v_ca", ModulData.packet.input.v_in_CA);
+    cJSON_AddNumberToObject(input, "v_bp_a", ModulData.packet.input.v_bypass_A);
+    cJSON_AddNumberToObject(input, "v_bp_b", ModulData.packet.input.v_bypass_B);
+    cJSON_AddNumberToObject(input, "v_bp_c", ModulData.packet.input.v_bypass_C);
+    cJSON_AddNumberToObject(input, "i_a", ModulData.packet.input.i_in_A);
+    cJSON_AddNumberToObject(input, "i_b", ModulData.packet.input.i_in_B);
+    cJSON_AddNumberToObject(input, "i_c", ModulData.packet.input.i_in_C);
+    cJSON_AddNumberToObject(input, "freq", ModulData.packet.input.freq_in);
+    cJSON_AddItemToObject(root, "input", input);
 
-    // --- Аварии (GroupAlarms_t) ---
-    cJSON_AddNumberToObject(root, "err_low_input_vol", pkt->alarms.err_low_input_vol);
-    cJSON_AddNumberToObject(root, "err_high_dc_bus", pkt->alarms.err_high_dc_bus);
-    cJSON_AddNumberToObject(root, "err_low_bat_charge", pkt->alarms.err_low_bat_charge);
-    cJSON_AddNumberToObject(root, "err_bat_not_conn", pkt->alarms.err_bat_not_conn);
-    cJSON_AddNumberToObject(root, "err_inv_fault", pkt->alarms.err_inv_fault);
-    cJSON_AddNumberToObject(root, "err_inv_overcurrent", pkt->alarms.err_inv_overcurrent);
-    cJSON_AddNumberToObject(root, "err_high_out_vol", pkt->alarms.err_high_out_vol);
-    cJSON_AddNumberToObject(root, "err_fan_fault", pkt->alarms.err_fan_fault);
-    cJSON_AddNumberToObject(root, "err_replace_bat", pkt->alarms.err_replace_bat);
-    cJSON_AddNumberToObject(root, "err_rect_overheat", pkt->alarms.err_rect_overheat);
-    cJSON_AddNumberToObject(root, "err_inv_overheat", pkt->alarms.err_inv_overheat);
+    // --- 4. OUTPUT (Inverter) ---
+    cJSON *output = cJSON_CreateObject();
+    cJSON_AddNumberToObject(output, "v_a", ModulData.packet.output.v_out_A);
+    cJSON_AddNumberToObject(output, "v_b", ModulData.packet.output.v_out_B);
+    cJSON_AddNumberToObject(output, "v_c", ModulData.packet.output.v_out_C);
+    cJSON_AddNumberToObject(output, "freq", ModulData.packet.output.freq_out);
+    cJSON_AddNumberToObject(output, "i_a", ModulData.packet.output.i_out_A);
+    cJSON_AddNumberToObject(output, "i_b", ModulData.packet.output.i_out_B);
+    cJSON_AddNumberToObject(output, "i_c", ModulData.packet.output.i_out_C);
+    cJSON_AddNumberToObject(output, "p_act_a", ModulData.packet.output.p_active_A);
+    cJSON_AddNumberToObject(output, "p_act_b", ModulData.packet.output.p_active_B);
+    cJSON_AddNumberToObject(output, "p_act_c", ModulData.packet.output.p_active_C);
+    cJSON_AddNumberToObject(output, "load_a", ModulData.packet.output.load_pct_A);
+    cJSON_AddNumberToObject(output, "load_b", ModulData.packet.output.load_pct_B);
+    cJSON_AddNumberToObject(output, "load_c", ModulData.packet.output.load_pct_C);
+    cJSON_AddItemToObject(root, "output", output);
 
-    // --- Входные параметры (GroupInput_t) ---
-    cJSON_AddNumberToObject(root, "v_in_AB", pkt->input.v_in_AB);
-    cJSON_AddNumberToObject(root, "v_in_BC", pkt->input.v_in_BC);
-    cJSON_AddNumberToObject(root, "v_in_CA", pkt->input.v_in_CA);
-    cJSON_AddNumberToObject(root, "v_bypass_A", pkt->input.v_bypass_A);
-    cJSON_AddNumberToObject(root, "v_bypass_B", pkt->input.v_bypass_B);
-    cJSON_AddNumberToObject(root, "v_bypass_C", pkt->input.v_bypass_C);
-    cJSON_AddNumberToObject(root, "i_in_A", pkt->input.i_in_A);
-    cJSON_AddNumberToObject(root, "i_in_B", pkt->input.i_in_B);
-    cJSON_AddNumberToObject(root, "i_in_C", pkt->input.i_in_C);
-    cJSON_AddNumberToObject(root, "freq_in", pkt->input.freq_in);
+    // --- 5. BATTERY ---
+    cJSON *bat = cJSON_CreateObject();
+    cJSON_AddNumberToObject(bat, "v", ModulData.packet.battery.bat_voltage);
+    cJSON_AddNumberToObject(bat, "dc_bus", ModulData.packet.battery.dc_bus_voltage);
+    cJSON_AddNumberToObject(bat, "curr", ModulData.packet.battery.bat_current);
+    cJSON_AddNumberToObject(bat, "cap", ModulData.packet.battery.bat_capacity);
+    cJSON_AddNumberToObject(bat, "time", ModulData.packet.battery.backup_time);
+    cJSON_AddItemToObject(root, "bat", bat);
 
-    // --- Выходные параметры (GroupOutput_t) ---
-    cJSON_AddNumberToObject(root, "v_out_A", pkt->output.v_out_A);
-    cJSON_AddNumberToObject(root, "v_out_B", pkt->output.v_out_B);
-    cJSON_AddNumberToObject(root, "v_out_C", pkt->output.v_out_C);
-    cJSON_AddNumberToObject(root, "freq_out", pkt->output.freq_out);
-    cJSON_AddNumberToObject(root, "i_out_A", pkt->output.i_out_A);
-    cJSON_AddNumberToObject(root, "i_out_B", pkt->output.i_out_B);
-    cJSON_AddNumberToObject(root, "i_out_C", pkt->output.i_out_C);
-    cJSON_AddNumberToObject(root, "p_active_A", pkt->output.p_active_A);
-    cJSON_AddNumberToObject(root, "p_active_B", pkt->output.p_active_B);
-    cJSON_AddNumberToObject(root, "p_active_C", pkt->output.p_active_C);
-    cJSON_AddNumberToObject(root, "p_apparent_A", pkt->output.p_apparent_A);
-    cJSON_AddNumberToObject(root, "p_apparent_B", pkt->output.p_apparent_B);
-    cJSON_AddNumberToObject(root, "p_apparent_C", pkt->output.p_apparent_C);
-    cJSON_AddNumberToObject(root, "load_pct_A", pkt->output.load_pct_A);
-    cJSON_AddNumberToObject(root, "load_pct_B", pkt->output.load_pct_B);
-    cJSON_AddNumberToObject(root, "load_pct_C", pkt->output.load_pct_C);
-    cJSON_AddNumberToObject(root, "event_count", pkt->output.event_count);
+    // Генерация строки (без форматирования для экономии байт)
+    char *string = cJSON_PrintUnformatted(root);
+    
+    // Удаляем объект JSON, чтобы не было утечки памяти (строка string останется)
+    cJSON_Delete(root);
 
-    // --- Параметры АКБ (GroupBattery_t) ---
-    cJSON_AddNumberToObject(root, "bat_voltage", pkt->battery.bat_voltage);
-    cJSON_AddNumberToObject(root, "bat_capacity", pkt->battery.bat_capacity);
-    cJSON_AddNumberToObject(root, "bat_groups_count", pkt->battery.bat_groups_count);
-    cJSON_AddNumberToObject(root, "dc_bus_voltage", pkt->battery.dc_bus_voltage);
-    cJSON_AddNumberToObject(root, "bat_current", pkt->battery.bat_current);
-    cJSON_AddNumberToObject(root, "backup_time", pkt->battery.backup_time);
-
-    // Печать в строку
-    char *json_str = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root); // Удаляем объект JSON из памяти
-
-    return json_str;
+    return string;
 }
+
 
 /* --- 2. МОДЕРНИЗИРОВАННЫЙ ОБРАБОТЧИК STATUS --- */
 static esp_err_t status_handler(httpd_req_t *req)
@@ -427,6 +423,9 @@ static httpd_handle_t start_webserver(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 8192; 
     config.max_uri_handlers = 8;
+    config.max_uri_len = 1024;
+    config.max_req_hdr_len = 2048;
+    
     httpd_handle_t server = NULL;
 
     if (httpd_start(&server, &config) == ESP_OK) {
@@ -438,6 +437,16 @@ static httpd_handle_t start_webserver(void)
 
         httpd_uri_t uri_status = { .uri = "/api/status", .method = HTTP_GET, .handler = status_handler, .user_ctx = NULL };
         httpd_register_uri_handler(server, &uri_status);
+
+                httpd_uri_t uri_ws = {
+            .uri        = "/ws",
+            .method     = HTTP_GET,
+            .handler    = ws_handler,
+            .user_ctx   = NULL,
+            .is_websocket = true // ВАЖНО: Включает режим сокетов
+        };
+
+        httpd_register_uri_handler(server, &uri_ws);
 
         return server;
     }

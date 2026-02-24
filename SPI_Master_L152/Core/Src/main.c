@@ -73,8 +73,9 @@ static void MX_SPI2_Init(void);
  */
 void calculate_crc32(const void *data, size_t len) {
     const uint8_t *bytes = (const uint8_t *)data;
+    ModulData_t *ModulData = (ModulData_t *)data;
     uint32_t crc = 0xFFFFFFFF; // Начальное значение (стандарт)
-    uint8_t *pCRC;
+//    uint8_t *pCRC;
 
     for (size_t i = 0; i < len; i++) {
 
@@ -92,12 +93,13 @@ void calculate_crc32(const void *data, size_t len) {
     }
 
     crc = ~crc;
-    pCRC = (uint8_t*)&crc;
+//    pCRC = (uint8_t*)&crc;
+    ModulData->packet.crc32 = crc;
 
-    *(uint8_t*)(data + len - 1 - 3) = pCRC[0];
-    *(uint8_t*)(data + len - 1 - 2) = pCRC[0];
-    *(uint8_t*)(data + len - 1 - 1) = pCRC[0];
-    *(uint8_t*)(data + len - 1 - 0) = pCRC[0];
+//    *(uint8_t*)(data + len - 1 - 3) = pCRC[0];
+//    *(uint8_t*)(data + len - 1 - 2) = pCRC[0];
+//    *(uint8_t*)(data + len - 1 - 1) = pCRC[0];
+//    *(uint8_t*)(data + len - 1 - 0) = pCRC[0];
 
 }
 
@@ -148,13 +150,16 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if( (GPIOC->IDR & GPIO_PIN_13) != GPIO_PIN_13)
+	  {
+		  SetVelueInStruckt(&ModulData);
+		  calculate_crc32(ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer) - 4);
+		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, RESET);
+		  HAL_SPI_Transmit(&hspi2, ModulData.Tx_Buffer , sizeof(ModulData.Tx_Buffer), HAL_MAX_DELAY);
+		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, SET);
+		  HAL_Delay(200);
+	  }
 
-	  SetVelueInStruckt(&ModulData);
-	  calculate_crc32(ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer));
-	  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, RESET);
-	  HAL_SPI_Transmit(&hspi2, ModulData.Tx_Buffer , sizeof(ModulData.Tx_Buffer), HAL_MAX_DELAY);
-	  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, SET);
-	  HAL_Delay(2000);
 
 
 

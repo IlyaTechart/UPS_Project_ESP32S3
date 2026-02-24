@@ -12,6 +12,9 @@
 #include "esp_heap_caps.h"
 //#include "esp_cache.h"
 
+
+#define CRC32_POLY 0xEDB88320
+
 static const char *TAG = "SPI_HANDLER";
 static const char *TAG_SPI = "TX_SPI";
 
@@ -43,14 +46,15 @@ static void spi_driver_task(void *pvParameters); // Внутренняя зад�
 void memory_allocate(void);
 static void GPIO_Init_SPI2(void);
 static void PrintUpsPacket(volatile FpgaToEspPacket_t *pkt);
+uint32_t calculate_crc32(const void *data, size_t len);
 
 void spi_slave_init(void) {
 
-     memory_allocate();
+    memory_allocate();
 
     GPIO_Init_SPI2();
 
-    gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLUP_ONLY);
+        gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLUP_ONLY);
     gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLUP_ONLY);
     gpio_set_pull_mode(GPIO_CS, GPIO_PULLUP_ONLY);
 
@@ -122,6 +126,7 @@ static void spi_driver_task(void *pvParameters) {
     while (1) {
         // Очищаем буфер приема
         memset(spi_buffers.pssram_rx_buffer, 0, CURRENT_SIZE);
+        memcpy(spi_buffers.pssram_tx_buffer, ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer));
 
         // Настраиваем транзакцию
         t.length =  CURRENT_SIZE * 8; // Размер в битах!
@@ -151,11 +156,12 @@ void IRAM_ATTR my_post_trans_cb(spi_slave_transaction_t *trans) {
     if (bytes_rcv > sizeof(msg.data)) bytes_rcv = sizeof(msg.data);
     
     // Копируем данные из буфера драйвера в сообщение очереди
-    //memcpy(msg.data, trans->rx_buffer, bytes_rcv);
-    for(uint32_t i = 0; i < 1024; i++)
-    {
-        msg.data[i] = *(uint8_t*)(trans->rx_buffer + i);
-    }
+    memcpy(msg.data, trans->rx_buffer, bytes_rcv);
+    // for(uint32_t i = 0; i < 1024; i++)
+    // {
+    //     msg.data[i] = *(uint8_t*)(trans->rx_buffer + i);
+    // }
+    
     LogFromISR++;
 
     msg.len = bytes_rcv;
@@ -183,12 +189,26 @@ void spi_processing_task(void *pvParameters) {
     while(1) {
         // Ждем сообщения из очереди
         LogFromProcessingTask++;
-        *(msg.data + 1023) = '\0';
+        //*(msg.data + 1023) = '\0';
         if((xQueueReceive(spi_evt_queue, &msg, portMAX_DELAY)) == pdPASS) 
         {
+            if (msg.len < 4)
+            {
+            ESP_LOGW(TAG, "Received too short packet: %lu bytes", msg.len);
+            // Пропускаем обработку, но обязательно отдаем семафор!
+            xSemaphoreGive(sema_for_driverTask);
+            continue; 
+            }
+
             memcpy(ModulData.Tx_Buffer, msg.data, msg.len);
 
-            PrintUpsPacket(&ModulData.packet);
+            if( ModulData.packet.crc32 != calculate_crc32(ModulData.Tx_Buffer, msg.len - 4) )
+            {
+                ESP_LOGE(TAG, "CRC is not correct!");
+            }else{
+                PrintUpsPacket(&ModulData.packet);
+            }
+            //PrintUpsPacket(&ModulData.packet);
 
             //ESP_LOG_BUFFER_HEX(TAG, msg.data, sizeof(msg.data));
         }
@@ -323,4 +343,36 @@ static void PrintUpsPacket(volatile FpgaToEspPacket_t *pkt) {
 
     ESP_LOGI(TAG_SPI, "[CRC] 0x%08lX", pkt->crc32);
     ESP_LOGI(TAG_SPI, "=================================");
+}
+
+/**
+ * Функция вычисления CRC-32 (побитовый метод).
+ * Этот метод компактный по коду, но медленнее табличного метода.
+ *
+ * @param data Указатель на буфер данных
+ * @param len Длина буфера в байтах
+ * @return Результат CRC-32
+ */
+uint32_t calculate_crc32(const void *data, size_t len) {
+    const uint8_t *bytes = (const uint8_t *)data;
+    uint32_t crc = 0xFFFFFFFF; // Начальное значение (стандарт)
+
+    for (size_t i = 0; i < len; i++) {
+
+        crc ^= bytes[i];
+
+        // Обработка 8 бит
+        for (int j = 0; j < 8; j++) {
+            // Если младший бит равен 1, делаем сдвиг и XOR с полиномом
+            if (crc & 1) {
+                crc = (crc >> 1) ^ CRC32_POLY;
+            } else {
+                crc = (crc >> 1);
+            }
+        }
+    }
+
+    crc = ~crc;
+
+    return (uint32_t)crc;
 }

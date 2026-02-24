@@ -4,11 +4,11 @@
 #include "wifi_control.h"
 
 #define GPIO_MOSI 11
-#define GPIO_MISO 9  
+#define GPIO_MISO 13  
 #define GPIO_SCLK 12
 #define GPIO_CS   10
 
-#define GPIO_HANDSHAKE 13
+#define GPIO_HANDSHAKE 14
 
 #define RCV_HOST    SPI2_HOST
 #define DMA_CHAN    SPI_DMA_CH_AUTO
@@ -131,7 +131,7 @@ typedef struct {
     GroupBattery_t battery;       // 6 регистров = 12 байт
 
     uint32_t crc32;               // Контрольная сумма пакета
-} FpgaToEspPacket_t;
+    } FpgaToEspPacket_t;
 
 
 #pragma pack(pop)

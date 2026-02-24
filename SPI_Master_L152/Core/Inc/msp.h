@@ -132,7 +132,7 @@ typedef struct {
 
 typedef union {
     FpgaToEspPacket_t packet;
-    uint8_t Tx_Buffer[sizeof(FpgaToEspPacket_t) + 4];
+    uint8_t Tx_Buffer[sizeof(FpgaToEspPacket_t)];
 }ModulData_t;
 
 
