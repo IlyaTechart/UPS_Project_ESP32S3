@@ -209,59 +209,9 @@ static const char* index_html =
 "    stEl.innerText = 'Disconnected'; stEl.className = 'badge bg-err';"
 "  });"
 "}"
-"setInterval(update, 100);"
+"setInterval(update, 1000);"
 "update();"
 "</script></body></html>";
-
-/* --- 4. ОБРАБОТЧИК WEBSOCKET (JSON) --- */
-static esp_err_t ws_handler(httpd_req_t *req)
-{
-    // 1. Если это рукопожатие (первое соединение)
-    if (req->method == HTTP_GET) {
-        ESP_LOGI(TAG, "WebSocket Handshake done");
-        return ESP_OK;
-    }
-
-    // 2. Это входящий пакет данных от браузера
-    httpd_ws_frame_t ws_pkt;
-    uint8_t *buf = NULL;
-    memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
-
-    // Считываем, что нам прислал браузер (нужно для очистки буфера приема)
-    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
-    if (ret != ESP_OK) return ret;
-
-    if (ws_pkt.len > 0) {
-        buf = calloc(1, ws_pkt.len + 1);
-        if (buf == NULL) return ESP_ERR_NO_MEM;
-        ws_pkt.payload = buf;
-        httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
-        // Тут можно прочитать buf, если нужно (например команды управления), 
-        // но пока мы просто реагируем на любой пакет отправкой статуса.
-        free(buf);
-    }
-
-    // 3. Формируем JSON (используем вашу функцию)
-    char *json_response = generate_ups_json_string();
-    if (json_response == NULL) {
-        return ESP_FAIL;
-    }
-
-    // 4. Отправляем JSON обратно через WebSocket
-    httpd_ws_frame_t response_pkt;
-    memset(&response_pkt, 0, sizeof(httpd_ws_frame_t));
-    response_pkt.payload = (uint8_t*)json_response;
-    response_pkt.len = strlen(json_response);
-    response_pkt.type = HTTPD_WS_TYPE_TEXT;
-
-    ret = httpd_ws_send_frame(req, &response_pkt);
-
-    // 5. Обязательно чистим память JSON!
-    free(json_response);
-
-    return ret;
-}
 
 
 /* --- 3. ФУНКЦИЯ ФОРМИРОВАНИЯ JSON --- */
@@ -437,16 +387,6 @@ static httpd_handle_t start_webserver(void)
 
         httpd_uri_t uri_status = { .uri = "/api/status", .method = HTTP_GET, .handler = status_handler, .user_ctx = NULL };
         httpd_register_uri_handler(server, &uri_status);
-
-                httpd_uri_t uri_ws = {
-            .uri        = "/ws",
-            .method     = HTTP_GET,
-            .handler    = ws_handler,
-            .user_ctx   = NULL,
-            .is_websocket = true // ВАЖНО: Включает режим сокетов
-        };
-
-        httpd_register_uri_handler(server, &uri_ws);
 
         return server;
     }
