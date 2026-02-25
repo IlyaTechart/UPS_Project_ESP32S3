@@ -63,44 +63,22 @@ static void MX_SPI2_Init(void);
 /* USER CODE BEGIN 0 */
 
 
-/**
- * Функция вычисления CRC-32 (побитовый метод).
- * Этот метод компактный по коду, но медленнее табличного метода.
- *
- * @param data Указатель на буфер данных
- * @param len Длина буфера в байтах
- * @return Результат CRC-32
- */
-void calculate_crc32(const void *data, size_t len) {
-    const uint8_t *bytes = (const uint8_t *)data;
-    ModulData_t *ModulData = (ModulData_t *)data;
-    uint32_t crc = 0xFFFFFFFF; // Начальное значение (стандарт)
-//    uint8_t *pCRC;
+/* ----------------------------------------------------------------------------
+ * CRC-32
+ * ---------------------------------------------------------------------------- */
+uint32_t calculate_crc32(const void *data, size_t len)
+{
+    const uint8_t *p = (const uint8_t *)data;
+    uint32_t crc = 0xFFFFFFFFu;
 
     for (size_t i = 0; i < len; i++) {
-
-        crc ^= bytes[i];
-
-        // Обработка 8 бит
+        crc ^= p[i];
         for (int j = 0; j < 8; j++) {
-            // Если младший бит равен 1, делаем сдвиг и XOR с полиномом
-            if (crc & 1) {
-                crc = (crc >> 1) ^ CRC32_POLY;
-            } else {
-                crc = (crc >> 1);
-            }
+            crc = (crc & 1) ? (crc >> 1) ^ CRC32_POLY : (crc >> 1);
         }
     }
 
-    crc = ~crc;
-//    pCRC = (uint8_t*)&crc;
-    ModulData->packet.crc32 = crc;
-
-//    *(uint8_t*)(data + len - 1 - 3) = pCRC[0];
-//    *(uint8_t*)(data + len - 1 - 2) = pCRC[0];
-//    *(uint8_t*)(data + len - 1 - 1) = pCRC[0];
-//    *(uint8_t*)(data + len - 1 - 0) = pCRC[0];
-
+    return ~crc;
 }
 
 
@@ -137,7 +115,8 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-
+  volatile uint16_t raw1;
+  volatile uint16_t raw2;
 
   memset(ModulData.Tx_Buffer, 0, sizeof(ModulData.Tx_Buffer));
   SetVelueInStruckt(&ModulData);
@@ -153,7 +132,9 @@ int main(void)
 	  if( (GPIOC->IDR & GPIO_PIN_13) != GPIO_PIN_13)
 	  {
 		  SetVelueInStruckt(&ModulData);
-		  calculate_crc32(ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer) - 4);
+		  raw1 = ModulData.packet.status.raw;
+		  raw2 = ModulData.packet.alarms.raw;
+		  ModulData.packet.crc32 = calculate_crc32(ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer) - 4);
 		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, RESET);
 		  HAL_SPI_Transmit(&hspi2, ModulData.Tx_Buffer , sizeof(ModulData.Tx_Buffer), HAL_MAX_DELAY);
 		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, SET);

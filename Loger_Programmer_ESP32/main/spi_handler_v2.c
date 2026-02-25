@@ -443,7 +443,9 @@ static void spi_slave_gpio_init_spi3(void)
 #endif
 
 /* ----------------------------------------------------------------------------
- * Вывод пакета UPS в лог (с префиксом источника SPI2/SPI3)
+ * Вывод пакета UPS в лог: типы из frames_structure.h (uint16_t).
+ * Значения приходят *10 — делим на 10 для одного знака после запятой (целочисленно: целая = v/10, дробная = v%10).
+ * Частота *100 — два знака после запятой (v/100 и v%100). Целые (event_count, capacity, backup_time и т.д.) без деления.
  * ---------------------------------------------------------------------------- */
 static void spi_slave_print_ups_packet(volatile FpgaToEspPacket_t *pkt, const char *source_tag)
 {
@@ -452,37 +454,80 @@ static void spi_slave_print_ups_packet(volatile FpgaToEspPacket_t *pkt, const ch
     }
 
     ESP_LOGI(TAG_UPS, "[%s] === UPS DATA (Cnt: %lu) ===", source_tag, (unsigned long)pkt->packet_counter);
-    ESP_LOGI(TAG_UPS, "[%s] [STATUS] Grid:%d Byp:%d Rect:%d Inv:%d PwrInv:%d PwrByp:%d Sync:%d",
-             source_tag, pkt->status.grid_status, pkt->status.bypass_grid_status,
-             pkt->status.rectifier_status, pkt->status.inverter_status,
-             pkt->status.pwr_via_inverter, pkt->status.pwr_via_bypass, pkt->status.sync_status);
-    ESP_LOGI(TAG_UPS, "[%s] [STATUS] Load:%d Sound:%d BatSt:%d UpsMode:%d",
-             source_tag, pkt->status.load_mode, pkt->status.sound_alarm,
-             pkt->status.battery_status, pkt->status.ups_mode);
-    ESP_LOGI(TAG_UPS, "[%s] [ALARM] LowIn:%d HighDC:%d LowBat:%d NoBat:%d InvF:%d InvOC:%d",
-             source_tag, pkt->alarms.err_low_input_vol, pkt->alarms.err_high_dc_bus,
-             pkt->alarms.err_low_bat_charge, pkt->alarms.err_bat_not_conn,
-             pkt->alarms.err_inv_fault, pkt->alarms.err_inv_overcurrent);
-    ESP_LOGI(TAG_UPS, "[%s] [INPUT] V_in: A=%.1f B=%.1f C=%.1f | V_byp: A=%.1f B=%.1f C=%.1f",
-             source_tag, pkt->input.v_in_AB, pkt->input.v_in_BC, pkt->input.v_in_CA,
-             pkt->input.v_bypass_A, pkt->input.v_bypass_B, pkt->input.v_bypass_C);
-    ESP_LOGI(TAG_UPS, "[%s] [INPUT] I_in: A=%.1f B=%.1f C=%.1f Freq: %.2f Hz",
-             source_tag, pkt->input.i_in_A, pkt->input.i_in_B, pkt->input.i_in_C, pkt->input.freq_in);
-    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] V_out: A=%.1f B=%.1f C=%.1f Freq: %.2f Hz",
-             source_tag, pkt->output.v_out_A, pkt->output.v_out_B, pkt->output.v_out_C, pkt->output.freq_out);
-    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] I_out: A=%.1f B=%.1f C=%.1f",
-             source_tag, pkt->output.i_out_A, pkt->output.i_out_B, pkt->output.i_out_C);
-    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] P_Act: A=%.1f B=%.1f C=%.1f kW",
-             source_tag, pkt->output.p_active_A, pkt->output.p_active_B, pkt->output.p_active_C);
-    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] P_App: A=%.1f B=%.1f C=%.1f kVA",
-             source_tag, pkt->output.p_apparent_A, pkt->output.p_apparent_B, pkt->output.p_apparent_C);
-    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] Load: A=%.1f%% B=%.1f%% C=%.1f%% Events: %.0f",
-             source_tag, pkt->output.load_pct_A, pkt->output.load_pct_B, pkt->output.load_pct_C, pkt->output.event_count);
-    ESP_LOGI(TAG_UPS, "[%s] [BAT] Vol: %.1f V Cap: %.0f Ah Grp: %.0f DC: %.1f V",
-             source_tag, pkt->battery.bat_voltage, pkt->battery.bat_capacity,
-             pkt->battery.bat_groups_count, pkt->battery.dc_bus_voltage);
-    ESP_LOGI(TAG_UPS, "[%s] [BAT] Cur: %.1f A Backup: %.0f min",
-             source_tag, pkt->battery.bat_current, pkt->battery.backup_time);
+    ESP_LOGI(TAG_UPS, "[%s] [STATUS] Grid:%u Byp:%u Rect:%u Inv:%u PwrInv:%u PwrByp:%u Sync:%u",
+             source_tag, (unsigned)pkt->status.grid_status, (unsigned)pkt->status.bypass_grid_status,
+             (unsigned)pkt->status.rectifier_status, (unsigned)pkt->status.inverter_status,
+             (unsigned)pkt->status.pwr_via_inverter, (unsigned)pkt->status.pwr_via_bypass, (unsigned)pkt->status.sync_status);
+    ESP_LOGI(TAG_UPS, "[%s] [STATUS] Load:%u Sound:%u BatSt:%u UpsMode:%u",
+             source_tag, (unsigned)pkt->status.load_mode, (unsigned)pkt->status.sound_alarm,
+             (unsigned)pkt->status.battery_status, (unsigned)pkt->status.ups_mode);
+    ESP_LOGI(TAG_UPS, "[%s] [ALARM] LowIn:%u HighDC:%u LowBat:%u NoBat:%u InvF:%u InvOC:%u HiOut:%u Fan:%u ReplBat:%u RectHot:%u InvHot:%u",
+             source_tag, (unsigned)pkt->alarms.err_low_input_vol, (unsigned)pkt->alarms.err_high_dc_bus,
+             (unsigned)pkt->alarms.err_low_bat_charge, (unsigned)pkt->alarms.err_bat_not_conn,
+             (unsigned)pkt->alarms.err_inv_fault, (unsigned)pkt->alarms.err_inv_overcurrent,
+             (unsigned)pkt->alarms.err_high_out_vol, (unsigned)pkt->alarms.err_fan_fault,
+             (unsigned)pkt->alarms.err_replace_bat, (unsigned)pkt->alarms.err_rect_overheat, (unsigned)pkt->alarms.err_inv_overheat);
+
+    /* Input: uint16_t, x0.1 В/А — выводим как целую.дробную (v/10 и v%10). freq_in x0.01 — v/100 и v%100 */
+    ESP_LOGI(TAG_UPS, "[%s] [INPUT] V_in: A=%u.%u B=%u.%u C=%u.%u | V_byp: A=%u.%u B=%u.%u C=%u.%u",
+             source_tag,
+             (unsigned)(pkt->input.v_in_AB / 10u), (unsigned)(pkt->input.v_in_AB % 10u),
+             (unsigned)(pkt->input.v_in_BC / 10u), (unsigned)(pkt->input.v_in_BC % 10u),
+             (unsigned)(pkt->input.v_in_CA / 10u), (unsigned)(pkt->input.v_in_CA % 10u),
+             (unsigned)(pkt->input.v_bypass_A / 10u), (unsigned)(pkt->input.v_bypass_A % 10u),
+             (unsigned)(pkt->input.v_bypass_B / 10u), (unsigned)(pkt->input.v_bypass_B % 10u),
+             (unsigned)(pkt->input.v_bypass_C / 10u), (unsigned)(pkt->input.v_bypass_C % 10u));
+    ESP_LOGI(TAG_UPS, "[%s] [INPUT] I_in: A=%u.%u B=%u.%u C=%u.%u Freq: %u.%02u Hz",
+             source_tag,
+             (unsigned)(pkt->input.i_in_A / 10u), (unsigned)(pkt->input.i_in_A % 10u),
+             (unsigned)(pkt->input.i_in_B / 10u), (unsigned)(pkt->input.i_in_B % 10u),
+             (unsigned)(pkt->input.i_in_C / 10u), (unsigned)(pkt->input.i_in_C % 10u),
+             (unsigned)(pkt->input.freq_in / 100u), (unsigned)(pkt->input.freq_in % 100u));
+
+    /* Output: x0.1 В/А/кВт/кВА/% — v/10 и v%10; freq_out x0.01; event_count — целое */
+    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] V_out: A=%u.%u B=%u.%u C=%u.%u Freq: %u.%02u Hz",
+             source_tag,
+             (unsigned)(pkt->output.v_out_A / 10u), (unsigned)(pkt->output.v_out_A % 10u),
+             (unsigned)(pkt->output.v_out_B / 10u), (unsigned)(pkt->output.v_out_B % 10u),
+             (unsigned)(pkt->output.v_out_C / 10u), (unsigned)(pkt->output.v_out_C % 10u),
+             (unsigned)(pkt->output.freq_out / 100u), (unsigned)(pkt->output.freq_out % 100u));
+    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] I_out: A=%u.%u B=%u.%u C=%u.%u",
+             source_tag,
+             (unsigned)(pkt->output.i_out_A / 10u), (unsigned)(pkt->output.i_out_A % 10u),
+             (unsigned)(pkt->output.i_out_B / 10u), (unsigned)(pkt->output.i_out_B % 10u),
+             (unsigned)(pkt->output.i_out_C / 10u), (unsigned)(pkt->output.i_out_C % 10u));
+    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] P_Act: A=%u.%u B=%u.%u C=%u.%u kW",
+             source_tag,
+             (unsigned)(pkt->output.p_active_A / 10u), (unsigned)(pkt->output.p_active_A % 10u),
+             (unsigned)(pkt->output.p_active_B / 10u), (unsigned)(pkt->output.p_active_B % 10u),
+             (unsigned)(pkt->output.p_active_C / 10u), (unsigned)(pkt->output.p_active_C % 10u));
+    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] P_App: A=%u.%u B=%u.%u C=%u.%u kVA",
+             source_tag,
+             (unsigned)(pkt->output.p_apparent_A / 10u), (unsigned)(pkt->output.p_apparent_A % 10u),
+             (unsigned)(pkt->output.p_apparent_B / 10u), (unsigned)(pkt->output.p_apparent_B % 10u),
+             (unsigned)(pkt->output.p_apparent_C / 10u), (unsigned)(pkt->output.p_apparent_C % 10u));
+    ESP_LOGI(TAG_UPS, "[%s] [OUTPUT] Load: A=%u.%u%% B=%u.%u%% C=%u.%u%% Events: %u",
+             source_tag,
+             (unsigned)(pkt->output.load_pct_A / 10u), (unsigned)(pkt->output.load_pct_A % 10u),
+             (unsigned)(pkt->output.load_pct_B / 10u), (unsigned)(pkt->output.load_pct_B % 10u),
+             (unsigned)(pkt->output.load_pct_C / 10u), (unsigned)(pkt->output.load_pct_C % 10u),
+             (unsigned)pkt->output.event_count);
+
+    /* Battery: bat_voltage, dc_bus x0.1; bat_current x0.1 знаковый; capacity, backup_time — целые */
+    {
+        uint16_t v = pkt->battery.bat_voltage;
+        uint16_t dc = pkt->battery.dc_bus_voltage;
+        int16_t cur = (int16_t)pkt->battery.bat_current;
+        uint16_t cur_abs = (uint16_t)(cur < 0 ? -cur : cur);
+        ESP_LOGI(TAG_UPS, "[%s] [BAT] Vol: %u.%u V Cap: %u Ah Grp: %u DC: %u.%u V",
+                 source_tag, (unsigned)(v / 10u), (unsigned)(v % 10u),
+                 (unsigned)pkt->battery.bat_capacity, (unsigned)pkt->battery.bat_groups_count,
+                 (unsigned)(dc / 10u), (unsigned)(dc % 10u));
+        ESP_LOGI(TAG_UPS, "[%s] [BAT] Cur: %s%u.%u A Backup: %u min",
+                 source_tag, cur < 0 ? "-" : "",
+                 (unsigned)(cur_abs / 10u), (unsigned)(cur_abs % 10u),
+                 (unsigned)pkt->battery.backup_time);
+    }
     ESP_LOGI(TAG_UPS, "[%s] [CRC] 0x%08lX", source_tag, (unsigned long)pkt->crc32);
     ESP_LOGI(TAG_UPS, "[%s] =================================", source_tag);
 }
@@ -492,6 +537,12 @@ static void spi_slave_print_ups_packet(volatile FpgaToEspPacket_t *pkt, const ch
  * ---------------------------------------------------------------------------- */
 static uint32_t spi_slave_crc32(const void *data, size_t len)
 {
+    uint16_t raw1 = 0;
+    uint16_t raw2 = 0;
+
+    raw1 = *(uint16_t*)(data + 8);
+    raw2 = *(uint16_t*)(data + 10);
+
     const uint8_t *p = (const uint8_t *)data;
     uint32_t crc = 0xFFFFFFFFu;
 

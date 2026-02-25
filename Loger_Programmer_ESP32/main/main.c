@@ -24,7 +24,7 @@
 #include "usb_defs.h"
 #include "led_io.h"
 #include "wifi_control.h"
-#include "spi_handler.h"
+#include "spi_handler_v2.h"
 
 static const char *TAG = "bridge_main";
 

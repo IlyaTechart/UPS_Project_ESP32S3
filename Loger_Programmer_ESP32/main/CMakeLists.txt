@@ -7,7 +7,7 @@ else()
     list(APPEND dependencies "driver")
 endif()
 
-idf_component_register(SRCS "wifi_control.c" "spi_handler_v2.c" #"spi_handler.c"
+idf_component_register(SRCS "logger_handler.c" "wifi_control.c" "spi_handler_v2.c" #"spi_handler.c"
                             "main.c"
                            
                             "msc.c"

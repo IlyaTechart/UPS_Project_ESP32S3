@@ -1,38 +1,18 @@
-/*
- * wi-fi_hande.h
- *
- *  Created on: 17 февр. 2026 г.
- *      Author: q
- */
 
-#ifndef INC_MSP_H_
-#define INC_MSP_H_
+#pragma once
 
-#include<stdio.h>
-#include<stdint.h>
-#include<stdlib.h>
-#include<string.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include "esp_err.h"
 
 
 
-typedef struct {
-    // Вход (Левая колонка)
-    float v_in_a; float v_in_b; float v_in_c; // Напряжение
-    float c_in_a; float c_in_b; float c_in_c; // Ток
-    float f_in_a; float f_in_b; float f_in_c; // Частота
-
-    // Выход (Правая колонка)
-    float p_act_a; float p_act_b; float p_act_c; // Активная мощность (kW)
-    float p_rea_a; float p_rea_b; float p_rea_c; // Реактивная мощность (kVar)
-    float load_a;  float load_b;  float load_c;  // Нагрузка (%)
-
-    int fan_time;
-    int module_id;
-} UpsData_t;
-
+/* ----------------------------------------------------------------------------
+ * Структуры пакета (ModulData_t и входящие в неё — не трогаем)
+ * ---------------------------------------------------------------------------- */
 #pragma pack(push, 1)
-
-// Директива для плотной упаковки данных (важно для передачи структур байт-в-байт через SPI)
 
 // --- Группа 1: Статусы (Регистры 10001-10011) ---
 typedef struct {
@@ -128,13 +108,14 @@ typedef struct {
     uint32_t packet_counter;      // Инкрементальный счетчик для отладки
 
     // Вложенные структуры данных (порядок важен!)
-    GroupStatus_t  status;        // 11 регистров = 2 байта
-    GroupAlarms_t  alarms;        // 11 регистров = 2 байта
+    GroupStatus_t  status;        // 11 регистров = 22 байта
+    GroupAlarms_t  alarms;        // 11 регистров = 22 байта
     GroupInput_t   input;         // 10 регистров = 20 байт
     GroupOutput_t  output;        // 17 регистров = 34 байта
     GroupBattery_t battery;       // 6 регистров = 12 байт
 
     uint32_t crc32;               // Контрольная сумма пакета
+	uint32_t system_time_ms;      // Ситсемное время в которое был принят покет 
 } FpgaToEspPacket_t;
 
 
@@ -144,10 +125,3 @@ typedef union {
     FpgaToEspPacket_t packet;
     uint8_t Tx_Buffer[sizeof(FpgaToEspPacket_t)];
 }ModulData_t;
-
-
-
-void SetVelueInStruckt(ModulData_t *ups_data);
-
-
-#endif /* INC_MSP_H_ */
