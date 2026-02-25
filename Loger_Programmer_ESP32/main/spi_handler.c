@@ -63,17 +63,10 @@ void spi_slave_init(void) {
 
     GPIO_Init_SPI2();
 
-    // gpio_set_pull_mode(SPI2_GPIO_MOSI, GPIO_PULLUP_ONLY);
-    // gpio_set_pull_mode(SPI2_GPIO_SCLK, GPIO_PULLUP_ONLY);
-    // gpio_set_pull_mode(SPI2_GPIO_CS, GPIO_PULLUP_ONLY);
-
-    // gpio_io_config_t gpio_io_config = {0};
-    // gpio_get_io_config(SPI2_GPIO_CS, &gpio_io_config);
-
     // 1. Создаем очереди и набор очередей (для ожидания данных с любого SPI)
     spi_evt_queue = xQueueCreate(2, sizeof(spi_message_t));
     spi3_evt_queue = xQueueCreate(2, sizeof(spi_message_t));
-    spi_queue_set = xQueueCreateSet(2 + 2);
+    //spi_queue_set = xQueueCreateSet(2 + 2);
     if (spi_evt_queue == NULL || spi3_evt_queue == NULL || spi_queue_set == NULL) {
         ESP_LOGE(TAG, "Error creating queue(s) or set");
         return;
@@ -132,14 +125,8 @@ void spi_slave_init(void) {
     // Выдаём семафор один раз, чтобы задача могла начать работу
     xSemaphoreGive(sema_for_driverTask);
 
-    // 5. ЗАПУСК ДРАЙВЕРА (Обязательно!)
-    // Без этой задачи контроллер SPI не будет знать, куда принимать данные
-
     /* ---------- SPI3: ноги 35, 36, 9, 14 ---------- */
     GPIO_Init_SPI3();
-    gpio_set_pull_mode(SPI3_GPIO_MOSI, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(SPI3_GPIO_SCLK, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(SPI3_GPIO_CS, GPIO_PULLUP_ONLY);
 
     spi_bus_config_t buscfg3 = {
         .mosi_io_num = SPI3_GPIO_MOSI,
@@ -185,7 +172,6 @@ static void spi_driver_task(void *pvParameters) {
         t.length =  CURRENT_SIZE * 8; // Размер в битах!
         t.tx_buffer = spi_buffers.pssram_tx_buffer;
         t.rx_buffer = spi_buffers.pssram_rx_buffer;
-//        t.flags = SPI_SLAVE_TRANS_DMA_BUFFER_ALIGN_AUTO; // Разрешаем автопереаллокацию если нужна
         LogFromDriverTask++;
 
         // Ждем данные от мастера
@@ -231,16 +217,11 @@ void IRAM_ATTR my_post_trans_cb(spi_slave_transaction_t *trans) {
     
     // Копируем данные из буфера драйвера в сообщение очереди
     memcpy(msg.data, trans->rx_buffer, bytes_rcv);
-    // for(uint32_t i = 0; i < 1024; i++)
-    // {
-    //     msg.data[i] = *(uint8_t*)(trans->rx_buffer + i);
-    // }
     
     LogFromISR++;
 
     msg.len = bytes_rcv;
 
-    // Отправляем в очередь
     xQueueSendFromISR(spi_evt_queue, &msg, &xHigherPriorityTaskWoken);
     //gpio_set_level(GPIO_HANDSHAKE, 0);
 

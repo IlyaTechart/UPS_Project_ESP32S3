@@ -143,9 +143,7 @@ typedef union {
     FpgaToEspPacket_t packet;
     uint8_t Tx_Buffer[sizeof(FpgaToEspPacket_t) + 4];
 }ModulData_t;
-
-
-
+ 
 
 // Объявление функции инициализации
 void spi_slave_init(void);
