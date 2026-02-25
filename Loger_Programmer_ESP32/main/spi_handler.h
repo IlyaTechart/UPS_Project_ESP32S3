@@ -3,14 +3,17 @@
 #include "esp_err.h"
 #include "wifi_control.h"
 
-#define GPIO_MOSI 11
-#define GPIO_MISO 13  
-#define GPIO_SCLK 12
-#define GPIO_CS   10
+#define SPI2_GPIO_MOSI 11
+#define SPI2_GPIO_MISO 13  
+#define SPI2_GPIO_SCLK 12
+#define SPI2_GPIO_CS   10
 
-#define GPIO_HANDSHAKE 14
+/* SPI3 (отдельный приёмник, те же пакеты) — ноги 35, 36, 9, 14 */
+#define SPI3_GPIO_MOSI  35
+#define SPI3_GPIO_MISO  36
+#define SPI3_GPIO_SCLK  9
+#define SPI3_GPIO_CS    14
 
-#define RCV_HOST    SPI2_HOST
 #define DMA_CHAN    SPI_DMA_CH_AUTO
 
 #define BUFFER_SIZE  1

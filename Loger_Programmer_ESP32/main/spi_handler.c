@@ -20,16 +20,19 @@ static const char *TAG_SPI = "TX_SPI";
 
 // Очередь должна быть определена в .c файле
 static QueueHandle_t spi_evt_queue;
+static QueueHandle_t spi3_evt_queue;
+static QueueSetHandle_t spi_queue_set;
 
 SemaphoreHandle_t sema_for_driverTask;
+static SemaphoreHandle_t sema_for_driverTask_spi3;
 
 // Буферы для драйвера: HEAP_CAPS_DMA обязателен для DMA-capable памяти на ESP32S3
-// Выравнивание 16 байт требуется для L1CACHE на ESP32S3
-
 volatile spi_buffers_t spi_buffers;
-//EXT_RAM_BSS_ATTR volatile spi_message_t msg;
+volatile spi_buffers_t spi3_buffers;
 volatile spi_message_t msg;
+volatile spi_message_t msg_spi3;
 volatile ModulData_t ModulData;
+volatile ModulData_t ModulData_spi3;
 
 
 //Переменные для логов 
@@ -42,38 +45,47 @@ uint8_t LogFromProcessingTask = 0;
 // Прототипы функций (чтобы init их видел)
 void IRAM_ATTR my_post_setup_cb(spi_slave_transaction_t *trans);
 void IRAM_ATTR my_post_trans_cb(spi_slave_transaction_t *trans);
-static void spi_driver_task(void *pvParameters); // Внутренняя задача драйвера
+void IRAM_ATTR my_post_setup_cb_spi3(spi_slave_transaction_t *trans);
+void IRAM_ATTR my_post_trans_cb_spi3(spi_slave_transaction_t *trans);
+static void spi_driver_task(void *pvParameters);
+static void spi_driver_task_spi3(void *pvParameters);
 void memory_allocate(void);
 static void GPIO_Init_SPI2(void);
-static void PrintUpsPacket(volatile FpgaToEspPacket_t *pkt);
+static void GPIO_Init_SPI3(void);
+static void PrintUpsPacket(volatile FpgaToEspPacket_t *pkt, uint8_t *tag );
 uint32_t calculate_crc32(const void *data, size_t len);
 
 void spi_slave_init(void) {
+
+    BaseType_t  xTaskReturned = {0};
 
     memory_allocate();
 
     GPIO_Init_SPI2();
 
-        gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(GPIO_CS, GPIO_PULLUP_ONLY);
+    // gpio_set_pull_mode(SPI2_GPIO_MOSI, GPIO_PULLUP_ONLY);
+    // gpio_set_pull_mode(SPI2_GPIO_SCLK, GPIO_PULLUP_ONLY);
+    // gpio_set_pull_mode(SPI2_GPIO_CS, GPIO_PULLUP_ONLY);
 
-    gpio_io_config_t gpio_io_config = {0};
-    gpio_get_io_config(GPIO_CS, &gpio_io_config);
+    // gpio_io_config_t gpio_io_config = {0};
+    // gpio_get_io_config(SPI2_GPIO_CS, &gpio_io_config);
 
-    // 1. Создаем очередь
+    // 1. Создаем очереди и набор очередей (для ожидания данных с любого SPI)
     spi_evt_queue = xQueueCreate(2, sizeof(spi_message_t));
-
-    if (spi_evt_queue == NULL) {
-        ESP_LOGE(TAG, "Error creating queue");
+    spi3_evt_queue = xQueueCreate(2, sizeof(spi_message_t));
+    spi_queue_set = xQueueCreateSet(2 + 2);
+    if (spi_evt_queue == NULL || spi3_evt_queue == NULL || spi_queue_set == NULL) {
+        ESP_LOGE(TAG, "Error creating queue(s) or set");
         return;
     }
+    xQueueAddToSet(spi_evt_queue, spi_queue_set);
+    xQueueAddToSet(spi3_evt_queue, spi_queue_set);
     
     // 2. Настраиваем шину SPI
     spi_bus_config_t buscfg = {
-        .mosi_io_num = GPIO_MOSI,
-        .miso_io_num = GPIO_MISO,
-        .sclk_io_num = GPIO_SCLK,
+        .mosi_io_num = SPI2_GPIO_MOSI,
+        .miso_io_num = SPI2_GPIO_MISO,
+        .sclk_io_num = SPI2_GPIO_SCLK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1
         //.max_transfer_sz = CURRENT_SIZE + 1,
@@ -83,7 +95,7 @@ void spi_slave_init(void) {
     // 3. Настраиваем интерфейс слейва
     spi_slave_interface_config_t slvcfg = {
         .mode = 0,
-        .spics_io_num = GPIO_CS,
+        .spics_io_num = SPI2_GPIO_CS,
         .queue_size = 3,
         .flags = 0,
         .post_setup_cb = my_post_setup_cb, 
@@ -91,10 +103,24 @@ void spi_slave_init(void) {
     };
 
     // ВАЖНО: Используем SPI2_HOST (RCV_HOST определен в хедере)
-    esp_err_t ret = spi_slave_initialize(RCV_HOST, &buscfg, &slvcfg, DMA_CHAN);
+    esp_err_t ret = spi_slave_initialize(SPI2_HOST, &buscfg, &slvcfg, DMA_CHAN);
     if(ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init SPI: %s", esp_err_to_name(ret));
         return;
+    }else{
+
+        xTaskReturned = xTaskCreate(spi_driver_task, "spi_driver", 4096, NULL, 5, NULL);
+        if(xTaskReturned != pdPASS)
+        {
+            ESP_LOGE(TAG, "IS NOT CREATED: spi_driver");
+        }
+
+        xTaskReturned = xTaskCreate(spi_processing_task, "spi_processing_TSK", 4 * 1024, NULL, 10, NULL);
+        if(xTaskReturned != pdPASS)
+        {
+            ESP_LOGE(TAG, "IS NOT CREATED: spi_processing_TSK");
+        }
+
     }
 
     sema_for_driverTask = xSemaphoreCreateBinary();
@@ -108,12 +134,39 @@ void spi_slave_init(void) {
 
     // 5. ЗАПУСК ДРАЙВЕРА (Обязательно!)
     // Без этой задачи контроллер SPI не будет знать, куда принимать данные
-    BaseType_t TaskReturned = xTaskCreate(spi_driver_task, "spi_driver", 4096, NULL, 5, NULL);
-    if(TaskReturned != pdPASS)
-    {
-        ESP_LOGE(TAG, "IS NOT CREATED: spi_driver");
-    }
 
+    /* ---------- SPI3: ноги 35, 36, 9, 14 ---------- */
+    GPIO_Init_SPI3();
+    gpio_set_pull_mode(SPI3_GPIO_MOSI, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(SPI3_GPIO_SCLK, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(SPI3_GPIO_CS, GPIO_PULLUP_ONLY);
+
+    spi_bus_config_t buscfg3 = {
+        .mosi_io_num = SPI3_GPIO_MOSI,
+        .miso_io_num = SPI3_GPIO_MISO,
+        .sclk_io_num = SPI3_GPIO_SCLK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1
+    };
+    spi_slave_interface_config_t slvcfg3 = {
+        .mode = 0,
+        .spics_io_num = SPI3_GPIO_CS,
+        .queue_size = 3,
+        .flags = 0,
+        .post_setup_cb = my_post_setup_cb_spi3,
+        .post_trans_cb = my_post_trans_cb_spi3
+    };
+    ret = spi_slave_initialize(SPI3_HOST, &buscfg3, &slvcfg3, DMA_CHAN);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init SPI3: %s", esp_err_to_name(ret));
+    } else {
+        sema_for_driverTask_spi3 = xSemaphoreCreateBinary();
+        if (sema_for_driverTask_spi3 != NULL) {
+            xSemaphoreGive(sema_for_driverTask_spi3);
+            xTaskReturned = xTaskCreate(spi_driver_task_spi3, "spi3_driver", 4096, NULL, 5, NULL);
+            if (xTaskReturned != pdPASS) ESP_LOGE(TAG, "IS NOT CREATED: spi3_driver");
+        }
+    }
 
     ESP_LOGI(TAG, "SPI Init done.");
 }
@@ -136,7 +189,7 @@ static void spi_driver_task(void *pvParameters) {
         LogFromDriverTask++;
 
         // Ждем данные от мастера
-        volatile esp_err_t ret = spi_slave_transmit(RCV_HOST, &t, portMAX_DELAY);
+        volatile esp_err_t ret = spi_slave_transmit(SPI2_HOST, &t, portMAX_DELAY);
 
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "SPI trans failed: %s", esp_err_to_name(ret));
@@ -146,9 +199,30 @@ static void spi_driver_task(void *pvParameters) {
     }
 }
 
+/* ---------- SPI3 driver task ---------- */
+static void spi_driver_task_spi3(void *pvParameters) {
+    spi_slave_transaction_t t;
+    memset(&t, 0, sizeof(t));
+
+    while (1) {
+        memset(spi3_buffers.pssram_rx_buffer, 0, CURRENT_SIZE);
+        memcpy(spi3_buffers.pssram_tx_buffer, ModulData_spi3.Tx_Buffer, sizeof(ModulData_spi3.Tx_Buffer));
+
+        t.length = CURRENT_SIZE * 8;
+        t.tx_buffer = spi3_buffers.pssram_tx_buffer;
+        t.rx_buffer = spi3_buffers.pssram_rx_buffer;
+
+        esp_err_t ret = spi_slave_transmit(SPI3_HOST, &t, portMAX_DELAY);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "SPI3 trans failed: %s", esp_err_to_name(ret));
+        }
+        xSemaphoreTake(sema_for_driverTask_spi3, portMAX_DELAY);
+    }
+}
+
 // Обработчик прерывания (вызывается ПОСЛЕ приема данных)
 void IRAM_ATTR my_post_trans_cb(spi_slave_transaction_t *trans) {
-    gpio_set_level(GPIO_HANDSHAKE, 1);
+//    gpio_set_level(GPIO_HANDSHAKE, 1);
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     
     // Вычисляем сколько байт реально пришло
@@ -177,46 +251,61 @@ void IRAM_ATTR my_post_trans_cb(spi_slave_transaction_t *trans) {
 
 // Пустышка для setup (вызывается ПЕРЕД транзакцией)
 void IRAM_ATTR my_post_setup_cb(spi_slave_transaction_t *trans) {
-//    gpio_set_level(GPIO_HANDSHAKE, 0);
-    // Здесь можно выставить GPIO в 1, чтобы сигнализировать Мастеру "Я готов"
+    (void)trans;
 }
 
-// Задача обработки (Пользовательская логика)
+/* ---------- SPI3 callbacks ---------- */
+void IRAM_ATTR my_post_trans_cb_spi3(spi_slave_transaction_t *trans) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    uint32_t bytes_rcv = trans->trans_len / 8;
+    if (bytes_rcv > sizeof(msg_spi3.data)) bytes_rcv = sizeof(msg_spi3.data);
+    memcpy(msg_spi3.data, trans->rx_buffer, bytes_rcv);
+    msg_spi3.len = bytes_rcv;
+    xQueueSendFromISR(spi3_evt_queue, &msg_spi3, &xHigherPriorityTaskWoken);
+    if (xHigherPriorityTaskWoken) portYIELD_FROM_ISR();
+}
+
+void IRAM_ATTR my_post_setup_cb_spi3(spi_slave_transaction_t *trans) {
+    (void)trans;
+}
+
+// Задача обработки — обрабатывает данные с SPI2 и SPI3, оба выводят в терминал
 void spi_processing_task(void *pvParameters) {
     ESP_LOGI(TAG, "SPI Processing task started");
-    uint32_t cnt_msg;
+    spi_message_t recv_msg;
 
-    while(1) {
-        // Ждем сообщения из очереди
-        LogFromProcessingTask++;
-        //*(msg.data + 1023) = '\0';
-        if((xQueueReceive(spi_evt_queue, &msg, portMAX_DELAY)) == pdPASS) 
-        {
-            if (msg.len < 4)
-            {
-            ESP_LOGW(TAG, "Received too short packet: %lu bytes", msg.len);
-            // Пропускаем обработку, но обязательно отдаем семафор!
-            xSemaphoreGive(sema_for_driverTask);
-            continue; 
-            }
+    while (1) {
+        QueueHandle_t active = (QueueHandle_t)xQueueSelectFromSet(spi_queue_set, portMAX_DELAY);
+        if (active == NULL) continue;
 
-            memcpy(ModulData.Tx_Buffer, msg.data, msg.len);
+        if (xQueueReceive(active, &recv_msg, 0) != pdPASS) continue;
 
-            if( ModulData.packet.crc32 != calculate_crc32(ModulData.Tx_Buffer, msg.len - 4) )
-            {
-                ESP_LOGE(TAG, "CRC is not correct!");
-            }else{
-                PrintUpsPacket(&ModulData.packet);
-            }
-            //PrintUpsPacket(&ModulData.packet);
+        bool is_spi2 = (active == spi_evt_queue);
+        SemaphoreHandle_t sem = is_spi2 ? sema_for_driverTask : sema_for_driverTask_spi3;
+        const char *src_tag = is_spi2 ? "SPI2" : "SPI3";
 
-            //ESP_LOG_BUFFER_HEX(TAG, msg.data, sizeof(msg.data));
+        if (recv_msg.len < 4) {
+            ESP_LOGW(TAG, "[%s] Received too short packet: %lu bytes", src_tag, recv_msg.len);
+            xSemaphoreGive(sem);
+            continue;
         }
 
-        xSemaphoreGive(sema_for_driverTask);
-        //ESP_LOG_BUFFER_HEX(TAG, msg.data, msg.len);
-            
-        
+        if (is_spi2) {
+            memcpy(ModulData.Tx_Buffer, recv_msg.data, recv_msg.len);
+            if (ModulData.packet.crc32 != calculate_crc32(ModulData.Tx_Buffer, recv_msg.len - 4)) {
+                ESP_LOGE(TAG, "[%s] CRC is not correct!", src_tag);
+            } else {
+                PrintUpsPacket(&ModulData.packet, src_tag);
+            }
+        } else {
+            memcpy(ModulData_spi3.Tx_Buffer, recv_msg.data, recv_msg.len);
+            if (ModulData_spi3.packet.crc32 != calculate_crc32(ModulData_spi3.Tx_Buffer, recv_msg.len - 4)) {
+                ESP_LOGE(TAG, "[%s] CRC is not correct!", src_tag);
+            } else {
+                PrintUpsPacket(&ModulData_spi3.packet, src_tag);
+            }
+        }
+        xSemaphoreGive(sem);
     }
 }
 
@@ -226,18 +315,28 @@ void memory_allocate(void)
     //spi_buffers.pssram_rx_buffer = (uint8_t*)heap_caps_aligned_alloc(32, CURRENT_SIZE,  MALLOC_CAP_DMA);
     //spi_buffers.pssram_tx_buffer = (uint8_t*)heap_caps_aligned_alloc(32, CURRENT_SIZE,  MALLOC_CAP_DMA);
 
-    spi_buffers.pssram_rx_buffer = (uint8_t*)spi_bus_dma_memory_alloc(RCV_HOST, CURRENT_SIZE, MALLOC_CAP_DMA);
-    spi_buffers.pssram_tx_buffer = (uint8_t*)spi_bus_dma_memory_alloc(RCV_HOST, CURRENT_SIZE, MALLOC_CAP_DMA);
+    spi_buffers.pssram_rx_buffer = (uint8_t*)spi_bus_dma_memory_alloc(SPI2_HOST, CURRENT_SIZE, MALLOC_CAP_DMA);
+    spi_buffers.pssram_tx_buffer = (uint8_t*)spi_bus_dma_memory_alloc(SPI2_HOST, CURRENT_SIZE, MALLOC_CAP_DMA);
 
     if ((spi_buffers.pssram_rx_buffer == NULL) || (spi_buffers.pssram_tx_buffer == NULL)) {
         ESP_LOGE(TAG, "Failed to allocate DMA buffers");
         return;
     }
-    
     memset(spi_buffers.pssram_rx_buffer, 0, CURRENT_SIZE);
     memset(spi_buffers.pssram_tx_buffer, 0, CURRENT_SIZE);
 
+    /* Буферы для SPI3 */
+    spi3_buffers.pssram_rx_buffer = (uint8_t*)spi_bus_dma_memory_alloc(SPI3_HOST, CURRENT_SIZE, MALLOC_CAP_DMA);
+    spi3_buffers.pssram_tx_buffer = (uint8_t*)spi_bus_dma_memory_alloc(SPI3_HOST, CURRENT_SIZE, MALLOC_CAP_DMA);
+    if ((spi3_buffers.pssram_rx_buffer == NULL) || (spi3_buffers.pssram_tx_buffer == NULL)) {
+        ESP_LOGE(TAG, "Failed to allocate DMA buffers for SPI3");
+        return;
+    }
+    memset(spi3_buffers.pssram_rx_buffer, 0, CURRENT_SIZE);
+    memset(spi3_buffers.pssram_tx_buffer, 0, CURRENT_SIZE);
+
     ESP_LOGI(TAG, "RX buffer @ 0x%p, TX buffer @ 0x%p", spi_buffers.pssram_rx_buffer, spi_buffers.pssram_tx_buffer);
+    ESP_LOGI(TAG, "SPI3 RX @ 0x%p, TX @ 0x%p", spi3_buffers.pssram_rx_buffer, spi3_buffers.pssram_tx_buffer);
     
     // Проверяем, что буферы действительно в DMA-capable памяти
 //     multi_heap_info_t info = {0};
@@ -247,10 +346,10 @@ void memory_allocate(void)
 
 static void GPIO_Init_SPI2(void)
 {
-    gpio_reset_pin(GPIO_MOSI);
-    gpio_reset_pin(GPIO_MISO);
-    gpio_reset_pin(GPIO_SCLK);
-    gpio_reset_pin(GPIO_CS);
+    gpio_reset_pin(SPI2_GPIO_MOSI);
+    gpio_reset_pin(SPI2_GPIO_MISO);
+    gpio_reset_pin(SPI2_GPIO_SCLK);
+    gpio_reset_pin(SPI2_GPIO_CS);
 
     // 2. Настраиваем структуру конфигурации
     gpio_config_t io_conf = {};
@@ -261,7 +360,7 @@ static void GPIO_Init_SPI2(void)
     // сможет ли ПЛИС сама управлять линией.
     io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.mode = GPIO_MODE_INPUT; 
-    io_conf.pin_bit_mask = (1ULL << GPIO_CS) | (1ULL << GPIO_SCLK) | (1ULL << GPIO_MOSI);
+    io_conf.pin_bit_mask = (1ULL << SPI2_GPIO_CS) | (1ULL << SPI2_GPIO_SCLK) | (1ULL << SPI2_GPIO_MOSI);
     io_conf.pull_down_en = 0;
     io_conf.pull_up_en = 0;   // Отключаем подтяжку, пусть ПЛИС рулит уровнем
     gpio_config(&io_conf);
@@ -269,23 +368,46 @@ static void GPIO_Init_SPI2(void)
     // --- Настройка выхода (MISO) ---
     // Это единственная линия, которую драйвит ESP32 в режиме Slave
     io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = (1ULL << GPIO_MISO);
+    io_conf.pin_bit_mask = (1ULL << SPI2_GPIO_MISO);
     io_conf.pull_up_en = 0;
     gpio_config(&io_conf);
     
     // Уставим MISO в 0 для начала
-    gpio_set_level(GPIO_MISO, 0);
+    gpio_set_level(SPI2_GPIO_MISO, 0);
 
     printf("DEBUG: Pins configured as raw GPIO inputs (Floating).\n");
+}
 
+static void GPIO_Init_SPI3(void)
+{
+    gpio_reset_pin(SPI3_GPIO_MOSI);
+    gpio_reset_pin(SPI3_GPIO_MISO);
+    gpio_reset_pin(SPI3_GPIO_SCLK);
+    gpio_reset_pin(SPI3_GPIO_CS);
+
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = (1ULL << SPI3_GPIO_CS) | (1ULL << SPI3_GPIO_SCLK) | (1ULL << SPI3_GPIO_MOSI);
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en = 0;
+    gpio_config(&io_conf);
+
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1ULL << SPI3_GPIO_MISO);
+    gpio_config(&io_conf);
+    gpio_set_level(SPI3_GPIO_MISO, 0);
+    ESP_LOGI(TAG, "SPI3 GPIO: MOSI=%d MISO=%d SCLK=%d CS=%d", SPI3_GPIO_MOSI, SPI3_GPIO_MISO, SPI3_GPIO_SCLK, SPI3_GPIO_CS);
 }
 
 // Функция для красивого вывода данных (принимает указатель на структуру с float)
-static void PrintUpsPacket(volatile FpgaToEspPacket_t *pkt) {
+static void PrintUpsPacket(volatile FpgaToEspPacket_t *pkt, uint8_t *tag ) {
     if (pkt->start_marker != 0xAA55AA55) { // Проверка маркера (если он у вас такой)
         ESP_LOGW(TAG_SPI, "Invalid Start Marker: 0x%08lX", pkt->start_marker);
         // Можно не выходить, если хотите видеть мусор
     }
+
+    ESP_LOGI(TAG_SPI, "SPI: %s", tag);
 
     ESP_LOGI(TAG_SPI, "=== UPS DATA (Cnt: %lu) ===", pkt->packet_counter);
 

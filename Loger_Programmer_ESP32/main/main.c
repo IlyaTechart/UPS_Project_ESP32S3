@@ -276,12 +276,6 @@ void app_main(void)
 
     spi_slave_init();
 
-    xTaskReturned = xTaskCreate(spi_processing_task, "spi_processing_TSK", 4 * 1024, NULL, 10, NULL);
-    if(xTaskReturned != pdPASS)
-    {
-        ESP_LOGE(TAG, "IS NOT CREATED: spi_processing_TSK");
-    }
-
     ESP_LOGI(TAG, "Program out of the MAIN_app");
 
 }
