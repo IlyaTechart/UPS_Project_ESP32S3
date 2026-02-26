@@ -108,8 +108,8 @@ typedef struct {
     uint32_t packet_counter;      // Инкрементальный счетчик для отладки
 
     // Вложенные структуры данных (порядок важен!)
-    GroupStatus_t  status;        // 11 регистров = 22 байта
-    GroupAlarms_t  alarms;        // 11 регистров = 22 байта
+    GroupStatus_t  status;        // 11 регистров = 2 байта
+    GroupAlarms_t  alarms;        // 11 регистров = 2 байта
     GroupInput_t   input;         // 10 регистров = 20 байт
     GroupOutput_t  output;        // 17 регистров = 34 байта
     GroupBattery_t battery;       // 6 регистров = 12 байт
@@ -117,6 +117,8 @@ typedef struct {
     uint32_t crc32;               // Контрольная сумма пакета
 	uint32_t system_time_ms;      // Ситсемное время в которое был принят покет 
 } FpgaToEspPacket_t;
+
+// При частоте передачи 4.0 Мб\сек вермя передачи составляет 184 us. 
 
 
 #pragma pack(pop)
@@ -135,3 +137,5 @@ typedef struct {
     GroupOutput_t  output;
     GroupBattery_t battery;
 } FpgaRmsData_t;
+
+

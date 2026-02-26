@@ -15,6 +15,8 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "logger_handler.h"
+#include "esp_timer.h"
 
 #define CRC32_POLY  0xEDB88320
 #define TAG         "spi_slave_v2"
@@ -33,7 +35,10 @@ static QueueHandle_t s_spi3_evt_queue;
 static SemaphoreHandle_t s_spi3_driver_sem;
 static QueueSetHandle_t s_spi_evt_queue_set;
 #endif
-
+/* ----------------------------------------------------------------------------
+ * Глобальный ьуфер кадров принятых сообщений (кольцевой буфер)
+ * ----------------------------------------------------------------------------*/
+extern RingBuffModulData_t RingBuffModulData;
 /* ----------------------------------------------------------------------------
  * Буферы и данные по шинам
  * ---------------------------------------------------------------------------- */
@@ -49,6 +54,9 @@ static volatile spi_slave_buffers_t s_spi3_buffers;
 static volatile spi_slave_message_t s_spi3_msg;
 static volatile ModulData_t s_modul_data_spi3;
 #endif
+
+//для дебага 
+extern RingBuffStatus_t RingBuffStatus;
 
 /* ----------------------------------------------------------------------------
  * Прототипы внутренних функций
@@ -185,7 +193,7 @@ void spi_slave_init(void)
 #endif
 
     /* Одна задача обработки: обрабатывает приём с обоих SPI и выводит в терминал */
-    if (xTaskCreate(spi_slave_processing_task, "spi_proc", 4096, NULL, 10, NULL) != pdPASS) {
+    if (xTaskCreate(spi_slave_processing_task, "spi_proc", 4096, NULL, 6, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create SPI processing task");
     }
 
@@ -340,10 +348,13 @@ static void spi_slave_processing_task(void *pvParameters)
             continue;
         }
         memcpy(ModulData.Tx_Buffer, msg.data, msg.len);
+        ModulData.packet.system_time_ms = (uint32_t)(esp_timer_get_time() / 1000); 
+        RingBuffStatus = RingBuffWrite(&ModulData);
         if (ModulData.packet.crc32 != spi_slave_crc32(ModulData.Tx_Buffer, msg.len - 4)) {
             ESP_LOGE(TAG, "[SPI2] CRC error");
         } else {
-            spi_slave_print_ups_packet(&ModulData.packet, "SPI2");
+             ESP_LOGI(TAG_UPS, "Dela Time: %lu", (unsigned)(ModulData.packet.system_time_ms));
+            //spi_slave_print_ups_packet(&ModulData.packet, "SPI2");
         }
         xSemaphoreGive(s_spi2_driver_sem);
     }
@@ -512,7 +523,6 @@ static void spi_slave_print_ups_packet(volatile FpgaToEspPacket_t *pkt, const ch
              (unsigned)(pkt->output.load_pct_B / 10u), (unsigned)(pkt->output.load_pct_B % 10u),
              (unsigned)(pkt->output.load_pct_C / 10u), (unsigned)(pkt->output.load_pct_C % 10u),
              (unsigned)pkt->output.event_count);
-
     /* Battery: bat_voltage, dc_bus x0.1; bat_current x0.1 знаковый; capacity, backup_time — целые */
     {
         uint16_t v = pkt->battery.bat_voltage;
@@ -529,6 +539,8 @@ static void spi_slave_print_ups_packet(volatile FpgaToEspPacket_t *pkt, const ch
                  (unsigned)pkt->battery.backup_time);
     }
     ESP_LOGI(TAG_UPS, "[%s] [CRC] 0x%08lX", source_tag, (unsigned long)pkt->crc32);
+    ESP_LOGI(TAG_UPS, "[%s] [SYSTEM TIME] Time: T=%u", source_tag, (unsigned)(pkt->system_time_ms));
+
     ESP_LOGI(TAG_UPS, "[%s] =================================", source_tag);
 }
 

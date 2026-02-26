@@ -25,6 +25,8 @@
 #include "led_io.h"
 #include "wifi_control.h"
 #include "spi_handler_v2.h"
+#include "logger_handler.h"
+
 
 static const char *TAG = "bridge_main";
 
@@ -275,6 +277,8 @@ void app_main(void)
     }
 
     spi_slave_init();
+
+    logger_Inint();
 
     ESP_LOGI(TAG, "Program out of the MAIN_app");
 

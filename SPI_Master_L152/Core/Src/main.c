@@ -138,7 +138,7 @@ int main(void)
 		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, RESET);
 		  HAL_SPI_Transmit(&hspi2, ModulData.Tx_Buffer , sizeof(ModulData.Tx_Buffer), HAL_MAX_DELAY);
 		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, SET);
-		  HAL_Delay(200);
+		  HAL_Delay(10);
 	  }
 
 

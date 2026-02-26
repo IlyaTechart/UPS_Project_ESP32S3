@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <math.h>
 #include "esp_err.h"
 #include "frames_structure.h"
 #include "freertos/FreeRTOS.h"
@@ -12,21 +11,18 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "logger_handler.h"
 
 
-char *TAG = "Logger";
+char *TAG = "LOGER";
 
 RingBuffModulData_t RingBuffModulData;
 static SemaphoreHandle_t bufferMutex = NULL; // Мутекс для защиты памяти
 
 RingBuffStatus_t RingBuffStatus = RINGBUF_OK;
 
-// Глобальная структура для хранения RMS-значений
-FpgaRmsData_t gFpgaRmsData;
-
 static void logger_proc_task(void *pvParameters);
-static void calculate_rms_from_buffer(void);
 
 void logger_Inint(void)
 {
@@ -41,14 +37,12 @@ void logger_Inint(void)
         ESP_LOGE(TAG, "Memory allocation failed");
         return;
     } 
-    // Размер кольцевого буфера в элементах (ячейках), а не в байтах
-    RingBuffModulData.size = SIZE_OF_CIRCULAR_BUFFER;
-    RingBuffModulData.cell_size = sizeof(ModulData_t);
+    RingBuffModulData.size = sizeof(ModulData_t) * SIZE_OF_CIRCULAR_BUFFER; // Размер в байтах 
     RingBuffModulData.head = 0;
     RingBuffModulData.tail = 0;
     RingBuffModulData.is_full = false;
 
-    if (xTaskCreate(logger_proc_task, "logger", 4096, NULL, 10, NULL) != pdPASS) {        // Создаём задачу
+    if (xTaskCreate(logger_proc_task, "logger", 4096, NULL, 2, NULL) != pdPASS) {        // Создаём задачу
         ESP_LOGE(TAG, "Failed to create LOGGER task");
     }else{
         ESP_LOGI(TAG, "Logger Init Success");
@@ -93,8 +87,19 @@ static void logger_proc_task(void *pvParameters)
     uint32_t last_time = (uint32_t)(esp_timer_get_time() / 1000); 
     for(;;)
     {
-
-
+        // Берём мьютекс только если нужно читать из буфера; отдавать должен только тот, кто взял
+        if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+        {
+            // TODO: прочитать данные из кольцевого буфера (tail/head), обработать/отправить
+            if (RingBuffModulData.tail != RingBuffModulData.head || RingBuffModulData.is_full)
+            {
+                //ESP_LOGI(TAG, "We can calculate!");
+                // Есть данные — здесь можно читать RingBuffModulData.buffer[RingBuffModulData.tail]
+                // и продвигать tail
+            }
+            xSemaphoreGive(bufferMutex);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
