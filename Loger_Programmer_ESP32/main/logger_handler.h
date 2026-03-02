@@ -4,7 +4,7 @@
 #include "frames_structure.h"
 #include "wifi_control.h"
 
-    #define SIZE_OF_CIRCULAR_BUFFER  500  //Колличесвто структур-кадров которые будут храниться в кольцевом буфере
+#define SIZE_OF_CIRCULAR_BUFFER  1000  //Колличесвто структур-кадров которые будут храниться в кольцевом буфере
 #define NUMBER_OF_REMAINING_EMPTY  50
 
 typedef enum{

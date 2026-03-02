@@ -64,6 +64,11 @@ void logger_Inint(void)
     }else{
         ESP_LOGI(TAG, "Logger Init Success");
     }
+
+    size_t heap_free = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    
+    ESP_LOGI(TAG, "Free heap size: %u", heap_free);
+
     
 }
 
