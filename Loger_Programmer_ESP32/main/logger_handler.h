@@ -4,7 +4,7 @@
 #include "frames_structure.h"
 #include "wifi_control.h"
 
-#define SIZE_OF_CIRCULAR_BUFFER  300  //Колличесвто структур-кадров которые будут храниться в кольцевом буфере
+#define SIZE_OF_CIRCULAR_BUFFER  30  //Колличесвто структур-кадров которые будут храниться в кольцевом буфере
 
 typedef enum{
     RINGBUF_OK,
@@ -19,7 +19,8 @@ typedef struct{
     ModulData_t *buffer;                // Буфер кадров
     volatile size_t tail;               // Точка чтения 
     volatile size_t head;               // Точка записи 
-    volatile size_t size;               // Размер буфера 
+    volatile size_t size_byte;          // Размер буфера 
+    volatile size_t size_cpyes;          // Количество копий
     volatile size_t cell_size;          // Размер одной ячейки (байт)
     volatile bool is_full;              // Флаг переполнения
 }RingBuffModulData_t;

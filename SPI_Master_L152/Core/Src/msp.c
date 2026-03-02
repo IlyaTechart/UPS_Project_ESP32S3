@@ -14,6 +14,7 @@ UpsData_t ups_data[27] = {0};
 
 void SetVelueInStruckt(ModulData_t *ups_data)
 {
+	ups_data->packet.start_marker = 0xAA55AA55;
 
 
 	//BOOL значения

@@ -348,12 +348,26 @@ static void spi_slave_processing_task(void *pvParameters)
             continue;
         }
         memcpy(ModulData.Tx_Buffer, msg.data, msg.len);
+
         ModulData.packet.system_time_ms = (uint32_t)(esp_timer_get_time() / 1000); 
+
         RingBuffStatus = RingBuffWrite(&ModulData);
+
+        // if(RingBuffStatus == RINGBUF_OK){
+        //     ESP_LOGI(TAG_UPS, "RINGBUF_OK");
+        // }else if(RingBuffStatus == RINGBUF_NULL_POINTER){
+        //     ESP_LOGI(TAG_UPS, "RINGBUF_NULL_POINTER");
+        // }else if(RingBuffStatus == RINGBUF_OVERFLOW){
+        //     ESP_LOGI(TAG_UPS, "RINGBUF_OVERFLOW");
+        // }else if(RingBuffStatus == RINGBUF_MUTEX_NOT_GIVE){
+        //     ESP_LOGI(TAG_UPS, "RINGBUF_MUTEX_NOT_GIVE");
+        // }
+
+
         if (ModulData.packet.crc32 != spi_slave_crc32(ModulData.Tx_Buffer, msg.len - 4)) {
             ESP_LOGE(TAG, "[SPI2] CRC error");
         } else {
-             ESP_LOGI(TAG_UPS, "Dela Time: %lu", (unsigned)(ModulData.packet.system_time_ms));
+            // ESP_LOGI(TAG_UPS, "Dela Time: %lu", (unsigned)(ModulData.packet.system_time_ms));
             //spi_slave_print_ups_packet(&ModulData.packet, "SPI2");
         }
         xSemaphoreGive(s_spi2_driver_sem);
