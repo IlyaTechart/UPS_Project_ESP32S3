@@ -19,7 +19,9 @@
 char *TAG = "LOGER";
 static const char *TAG_RMS = "LOG_RMS";
 
+// Переменная кольцевого буфера 
 RingBuffModulData_t RingBuffModulData;
+
 static SemaphoreHandle_t bufferMutex = NULL; // Мутекс для защиты памяти
 
 //Состояние кольцевого буфера
@@ -35,6 +37,7 @@ static size_t get_elements_count(RingBuffModulData_t *rb);
 static void calculate_rms_from_buffer(void);
 static void logger_print_rms_data(const FpgaRmsData_t *rms);
 static void print_error_flag_frame(RingBuffModulData_t *RingBuffModulData, UpsRegisterFlags_t *UpsRegisterFlags);
+void time_calculate_DEBUG(RingBuffModulData_t *RingBuffModulData);
 static void logger_proc_task(void *pvParameters);
 
 void logger_Inint(void)
@@ -120,7 +123,7 @@ static void calculate_rms_from_buffer(void)
         return;
     }
 
-    if( get_elements_count(&RingBuffModulData) < (SIZE_OF_CIRCULAR_BUFFER - (SIZE_OF_CIRCULAR_BUFFER / 2)) )
+    if( get_elements_count(&RingBuffModulData) < (SIZE_OF_CIRCULAR_BUFFER - NUMBER_OF_REMAINING_EMPTY) )
     {
         return;
     }
@@ -439,12 +442,29 @@ static void print_error_flag_frame(RingBuffModulData_t *rb, UpsRegisterFlags_t *
     }
 }
 
+void time_calculate_DEBUG(RingBuffModulData_t *rb)
+{
+    char* TAG_TIME = "Time sub";
+
+    FpgaToEspPacket_t* pkTail = &rb->buffer[rb->tail].packet;
+
+    size_t last_written_idx = (rb->head + rb->size_cpyes - 1) % rb->size_cpyes;
+    FpgaToEspPacket_t* pkHead = &rb->buffer[last_written_idx].packet;
+
+    // Вычитаем из НОВОГО времени СТАРОЕ (а не наоборот, чтобы не было переполнения uint32_t)
+    uint32_t deltaTime_ms = pkHead->system_time_ms - pkTail->system_time_ms; 
+    
+    ESP_LOGI(TAG_TIME, "Delta: %u ms, Elements: %d, Buf_statusЖ %s", (unsigned)deltaTime_ms, get_elements_count(rb), rb->is_full? "FULL" : "NOT FULL");
+}
+
 static void logger_proc_task(void *pvParameters)
 {
     uint64_t last_print_ms = 0;
 
     for(;;)
     {
+        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000); 
+        time_calculate_DEBUG(&RingBuffModulData);
         if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) == pdTRUE)
         {
             // Пересчитываем RMS по всем валидным кадрам в буфере
@@ -453,10 +473,9 @@ static void logger_proc_task(void *pvParameters)
             // UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);                                    // <<-- !Проверка утечки стека 
             // ESP_LOGI(TAG, "logger stack free: %u bytes", (unsigned)(hwm * sizeof(StackType_t)));
         }
-        print_error_flag_frame(&RingBuffModulData, &UpsRegisterFlags);
+        //print_error_flag_frame(&RingBuffModulData, &UpsRegisterFlags);
         //ESP_LOGI(TAG, "Circular buf: tail: %u  head: %u flag: %u", RingBuffModulData.tail, RingBuffModulData.head, RingBuffModulData.is_full );
         // Раз в 1 секунду выводим текущие RMS-значения
-        uint64_t now_ms = esp_timer_get_time() / 1000;
         if (now_ms - last_print_ms >= 1000) {
             last_print_ms = now_ms;
 
@@ -464,9 +483,10 @@ static void logger_proc_task(void *pvParameters)
             FpgaRmsData_t snapshot;
             memcpy(&snapshot, &gFpgaRmsData, sizeof(snapshot));
             //logger_print_rms_data(&snapshot);
+            //ESP_LOGI(TAG, "Current time: %u", now_ms);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 

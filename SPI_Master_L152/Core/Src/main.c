@@ -27,6 +27,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+#define TIME_DELAY 80
 
 /* USER CODE END PTD */
 
@@ -115,8 +116,7 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-  volatile uint16_t raw1;
-  volatile uint16_t raw2;
+
 
   memset(ModulData.Tx_Buffer, 0, sizeof(ModulData.Tx_Buffer));
   SetVelueInStruckt(&ModulData);
@@ -132,13 +132,19 @@ int main(void)
 	  if( (GPIOC->IDR & GPIO_PIN_13) != GPIO_PIN_13)
 	  {
 		  SetVelueInStruckt(&ModulData);
-		  raw1 = ModulData.packet.status.raw;
-		  raw2 = ModulData.packet.alarms.raw;
 		  ModulData.packet.crc32 = calculate_crc32(ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer) - 4);
 		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, RESET);
 		  HAL_SPI_Transmit(&hspi2, ModulData.Tx_Buffer , sizeof(ModulData.Tx_Buffer), HAL_MAX_DELAY);
 		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, SET);
-		  HAL_Delay(100);
+		  HAL_Delay(TIME_DELAY);
+	  }else{
+		  ModulData.packet.status.raw = (uint16_t)0;
+		  ModulData.packet.alarms.raw = (uint16_t)0;
+		  ModulData.packet.crc32 = calculate_crc32(ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer) - 4);
+		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, RESET);
+		  HAL_SPI_Transmit(&hspi2, ModulData.Tx_Buffer , sizeof(ModulData.Tx_Buffer), HAL_MAX_DELAY);
+		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, SET);
+		  HAL_Delay(TIME_DELAY);
 	  }
 
 
