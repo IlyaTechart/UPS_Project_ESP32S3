@@ -22,15 +22,20 @@ static const char *TAG_RMS = "LOG_RMS";
 RingBuffModulData_t RingBuffModulData;
 static SemaphoreHandle_t bufferMutex = NULL; // Мутекс для защиты памяти
 
+//Состояние кольцевого буфера
 RingBuffStatus_t RingBuffStatus = RINGBUF_OK;
+
+// Состояние UPS
+UpsRegisterFlags_t UpsRegisterFlags;
 
 // Глобальная структура для RMS-значений по данным из кольцевого буфера
 FpgaRmsData_t gFpgaRmsData;
 
 static size_t get_elements_count(RingBuffModulData_t *rb);
-static void logger_proc_task(void *pvParameters);
 static void calculate_rms_from_buffer(void);
 static void logger_print_rms_data(const FpgaRmsData_t *rms);
+static void print_error_flag_frame(RingBuffModulData_t *RingBuffModulData, UpsRegisterFlags_t *UpsRegisterFlags);
+static void logger_proc_task(void *pvParameters);
 
 void logger_Inint(void)
 {
@@ -115,7 +120,7 @@ static void calculate_rms_from_buffer(void)
         return;
     }
 
-    if( get_elements_count(&RingBuffModulData) < 10 )
+    if( get_elements_count(&RingBuffModulData) < (SIZE_OF_CIRCULAR_BUFFER - (SIZE_OF_CIRCULAR_BUFFER / 2)) )
     {
         return;
     }
@@ -364,7 +369,76 @@ static void logger_print_rms_data(const FpgaRmsData_t *r)
     ESP_LOGI(TAG_RMS, "[%s] =============================", src);
 }
 
-//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!УТЕЧКА СТЕКА!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// Вывод флагов ошибок/статусов UPS из последнего принятого кадра и запись в UpsRegisterFlags_t
+static void print_error_flag_frame(RingBuffModulData_t *rb, UpsRegisterFlags_t *out)
+{
+    static const char *TAG_ERR = "UPS_FLAG";
+
+    if (rb->buffer == NULL || out == NULL) {
+        return;
+    }
+
+    size_t count = get_elements_count(rb);
+    if (count == 0) {
+        return;
+    }
+
+    // Индекс последнего записанного кадра (head — следующая позиция записи)
+    size_t last_idx = (rb->head + rb->size_cpyes - 1) % rb->size_cpyes;
+    FpgaToEspPacket_t *pkt = &rb->buffer[last_idx].packet;
+
+    if (pkt->start_marker != 0xAA55AA55u) {
+        return;
+    }
+
+    uint16_t st = pkt->status.raw;
+    uint16_t al = pkt->alarms.raw;
+
+    memset(out, 0, sizeof(UpsRegisterFlags_t));
+
+    /* Статусы (10001–10011), биты 0–10 */
+    for (unsigned i = 0; i <= 10; i++) {
+        if (!(st & (1u << i))) continue;
+        switch (i) {
+            case 0:  out->grid_status        = 1; ESP_LOGW(TAG_ERR, "[10001] Grid: авария на входе");       break;
+            case 1:  out->bypass_grid_status = 1; ESP_LOGW(TAG_ERR, "[10002] Bypass grid: авария");         break;
+            case 2:  out->rectifier_status   = 1; ESP_LOGI(TAG_ERR, "[10003] Выпрямитель: работает");      break;
+            case 3:  out->inverter_status    = 1; ESP_LOGI(TAG_ERR, "[10004] Инвертор: работает");         break;
+            case 4:  out->pwr_via_inverter   = 1; ESP_LOGI(TAG_ERR, "[10005] Питание через инвертор");      break;
+            case 5:  out->pwr_via_bypass     = 1; ESP_LOGI(TAG_ERR, "[10006] Питание по байпасу");         break;
+            case 6:  out->sync_status        = 1; ESP_LOGW(TAG_ERR, "[10007] Синхронизация: рассогласование"); break;
+            case 7:  out->load_mode          = 1; ESP_LOGI(TAG_ERR, "[10008] Нагрузка от инвертора");      break;
+            case 8:  out->sound_alarm        = 1; ESP_LOGW(TAG_ERR, "[10009] Звуковая сигнализация");      break;
+            case 9:  out->battery_status     = 1; ESP_LOGI(TAG_ERR, "[10010] АКБ: разряд");                break;
+            case 10: out->ups_mode           = 1; ESP_LOGI(TAG_ERR, "[10011] ИБП: работа от батареи");     break;
+            default: break;
+        }
+    }
+
+    /* Аварии (10012–10022), биты 0–10 */
+    for (unsigned i = 0; i <= 10; i++) {
+        if (!(al & (1u << i))) continue;
+        switch (i) {
+            case 0:  out->err_low_input_vol    = 1; ESP_LOGE(TAG_ERR, "[10012] Низкое напряжение на входе ИБП"); break;
+            case 1:  out->err_high_dc_bus      = 1; ESP_LOGE(TAG_ERR, "[10013] Высокое напряжение DC шины");     break;
+            case 2:  out->err_low_bat_charge   = 1; ESP_LOGE(TAG_ERR, "[10014] Низкий заряд АКБ");               break;
+            case 3:  out->err_bat_not_conn     = 1; ESP_LOGE(TAG_ERR, "[10015] АКБ не подключены");              break;
+            case 4:  out->err_inv_fault        = 1; ESP_LOGE(TAG_ERR, "[10016] Неисправность инвертора");        break;
+            case 5:  out->err_inv_overcurrent  = 1; ESP_LOGE(TAG_ERR, "[10017] Перегрузка инвертора по току"); break;
+            case 6:  out->err_high_out_vol     = 1; ESP_LOGE(TAG_ERR, "[10018] Высокое напряжение на выходе");  break;
+            case 7:  out->err_fan_fault        = 1; ESP_LOGE(TAG_ERR, "[10019] Неисправность вентилятора");     break;
+            case 8:  out->err_replace_bat      = 1; ESP_LOGE(TAG_ERR, "[10020] Необходимо заменить АКБ");       break;
+            case 9:  out->err_rect_overheat    = 1; ESP_LOGE(TAG_ERR, "[10021] Перегрев выпрямителя");          break;
+            case 10: out->err_inv_overheat     = 1; ESP_LOGE(TAG_ERR, "[10022] Перегрев инвертора");            break;
+            default: break;
+        }
+    }
+
+    if (st != 0 || al != 0) {
+        ESP_LOGI(TAG_ERR, "--- флаги записаны в UpsRegisterFlags (status=0x%04X alarms=0x%04X) ---", (unsigned)st, (unsigned)al);
+    }
+}
+
 static void logger_proc_task(void *pvParameters)
 {
     uint64_t last_print_ms = 0;
@@ -379,6 +453,7 @@ static void logger_proc_task(void *pvParameters)
             // UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);                                    // <<-- !Проверка утечки стека 
             // ESP_LOGI(TAG, "logger stack free: %u bytes", (unsigned)(hwm * sizeof(StackType_t)));
         }
+        print_error_flag_frame(&RingBuffModulData, &UpsRegisterFlags);
         //ESP_LOGI(TAG, "Circular buf: tail: %u  head: %u flag: %u", RingBuffModulData.tail, RingBuffModulData.head, RingBuffModulData.is_full );
         // Раз в 1 секунду выводим текущие RMS-значения
         uint64_t now_ms = esp_timer_get_time() / 1000;
@@ -388,7 +463,7 @@ static void logger_proc_task(void *pvParameters)
             // Делаем локальную копию, чтобы вывод не зависел от мьютекса
             FpgaRmsData_t snapshot;
             memcpy(&snapshot, &gFpgaRmsData, sizeof(snapshot));
-            logger_print_rms_data(&snapshot);
+            //logger_print_rms_data(&snapshot);
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
