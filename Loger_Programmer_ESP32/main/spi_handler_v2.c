@@ -153,7 +153,7 @@ void spi_slave_init(void)
             return;
         }
         xSemaphoreGive(s_spi2_driver_sem);
-        if (xTaskCreate(spi_slave_driver_task_spi2, "spi2_drv", 4096, NULL, 5, NULL) != pdPASS) {
+        if (xTaskCreate(spi_slave_driver_task_spi2, "spi2_drv", 4096, NULL, 7, NULL) != pdPASS) {
             ESP_LOGE(TAG, "Failed to create SPI2 driver task");
         }
     }

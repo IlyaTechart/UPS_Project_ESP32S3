@@ -128,6 +128,7 @@ typedef union {
     uint8_t Tx_Buffer[sizeof(FpgaToEspPacket_t)];
 }ModulData_t;
 
+
 // Структура для хранения RMS-значений по тем же группам,
 // что и в основном пакете (без служебных полей заголовка/CRC)
 typedef struct {

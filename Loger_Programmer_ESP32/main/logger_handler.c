@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <math.h>
 #include "esp_err.h"
 #include "frames_structure.h"
 #include "freertos/FreeRTOS.h"
@@ -17,7 +16,7 @@
 
 
 char *TAG = "LOGER";
-static const char *TAG_RMS = "LOG_RMS";
+static const char *TAG_RMS = "LOG_AVG";
 
 // Переменная кольцевого буфера 
 RingBuffModulData_t RingBuffModulData;
@@ -30,12 +29,14 @@ RingBuffStatus_t RingBuffStatus = RINGBUF_OK;
 // Состояние UPS
 UpsRegisterFlags_t UpsRegisterFlags;
 
-// Глобальная структура для RMS-значений по данным из кольцевого буфера
-FpgaRmsData_t gFpgaRmsData;
+// Глобальная структура для средних значений по данным из кольцевого буфера
+FpgaRmsData_t gFpgaAvrData;
 
 static size_t get_elements_count(RingBuffModulData_t *rb);
-static void calculate_rms_from_buffer(void);
-static void logger_print_rms_data(const FpgaRmsData_t *rms);
+void add_sample_in_average(ModulData_t* ModulData);
+void sub_sample_from_average(ModulData_t* ModulData);
+static void calculate_moving_average_from_buffer(void);
+static void logger_print_avg_data(const FpgaRmsData_t *avg);
 static void print_error_flag_frame(RingBuffModulData_t *RingBuffModulData, UpsRegisterFlags_t *UpsRegisterFlags);
 void time_calculate_DEBUG(RingBuffModulData_t *RingBuffModulData);
 static void logger_proc_task(void *pvParameters);
@@ -48,18 +49,19 @@ void logger_Inint(void)
         return;
     }
 
-    RingBuffModulData.buffer = (ModulData_t *)heap_caps_calloc(SIZE_OF_CIRCULAR_BUFFER, sizeof(ModulData_t), MALLOC_CAP_DEFAULT); // выделяем память 
+    RingBuffModulData.buffer = (ModulData_t *)heap_caps_calloc(SIZE_OF_CIRCULAR_BUFFER, sizeof(ModulData_t), MALLOC_CAP_SPIRAM); // выделяем память 
     if (RingBuffModulData.buffer == NULL) {
-        ESP_LOGE(TAG, "Memory allocation failed");
+        ESP_LOGE(TAG, "Memory allocation failed in PSRAM");
         return;
     } 
     RingBuffModulData.size_byte = sizeof(ModulData_t) * SIZE_OF_CIRCULAR_BUFFER; // Размер в байтах 
-    RingBuffModulData.size_cpyes = SIZE_OF_CIRCULAR_BUFFER;
+    RingBuffModulData.cnt_cpyes = SIZE_OF_CIRCULAR_BUFFER;
     RingBuffModulData.head = 0;
     RingBuffModulData.tail = 0;
+    RingBuffModulData.count = 0;
     RingBuffModulData.is_full = false;
 
-    if (xTaskCreate(logger_proc_task, "logger", 8192, NULL, 10, NULL) != pdPASS) {        // Создаём задачу (стек 8KB — расчёт RMS + много ESP_LOGI)
+    if (xTaskCreate(logger_proc_task, "logger", 8192, NULL, 5, NULL) != pdPASS) {        // Создаём задачу (стек 8KB — расчёт RMS + много ESP_LOGI)
         ESP_LOGE(TAG, "Failed to create LOGGER task");
     }else{
         ESP_LOGI(TAG, "Logger Init Success");
@@ -74,7 +76,7 @@ void logger_Inint(void)
 
 // Функция возвращает текущее количество данных в буфере
 static size_t get_elements_count(RingBuffModulData_t *rb) {
-    size_t capacity = rb->size_cpyes; // Общая вместимость буфера (максимальное кол-во элементов)
+    size_t capacity = rb->cnt_cpyes; // Общая вместимость буфера (максимальное кол-во элементов)
     
     if (rb->is_full) {
         return capacity;
@@ -87,25 +89,125 @@ static size_t get_elements_count(RingBuffModulData_t *rb) {
     }
 }
 
+void add_sample_in_average(ModulData_t* ModulData)
+{
+    if (ModulData == NULL) {
+        return;
+    }
+
+    FpgaToEspPacket_t *p = &ModulData->packet;
+
+    // Группа INPUT
+    RingBuffModulData.FPGA_mov_averge.input.v_in_AB     += p->input.v_in_AB;
+    RingBuffModulData.FPGA_mov_averge.input.v_in_BC     += p->input.v_in_BC;
+    RingBuffModulData.FPGA_mov_averge.input.v_in_CA     += p->input.v_in_CA;
+    RingBuffModulData.FPGA_mov_averge.input.v_bypass_A  += p->input.v_bypass_A;
+    RingBuffModulData.FPGA_mov_averge.input.v_bypass_B  += p->input.v_bypass_B;
+    RingBuffModulData.FPGA_mov_averge.input.v_bypass_C  += p->input.v_bypass_C;
+    RingBuffModulData.FPGA_mov_averge.input.i_in_A      += p->input.i_in_A;
+    RingBuffModulData.FPGA_mov_averge.input.i_in_B      += p->input.i_in_B;
+    RingBuffModulData.FPGA_mov_averge.input.i_in_C      += p->input.i_in_C;
+    RingBuffModulData.FPGA_mov_averge.input.freq_in     += p->input.freq_in;
+
+    // Группа OUTPUT
+    RingBuffModulData.FPGA_mov_averge.output.v_out_A      += p->output.v_out_A;
+    RingBuffModulData.FPGA_mov_averge.output.v_out_B      += p->output.v_out_B;
+    RingBuffModulData.FPGA_mov_averge.output.v_out_C      += p->output.v_out_C;
+    RingBuffModulData.FPGA_mov_averge.output.freq_out     += p->output.freq_out;
+    RingBuffModulData.FPGA_mov_averge.output.i_out_A      += p->output.i_out_A;
+    RingBuffModulData.FPGA_mov_averge.output.i_out_B      += p->output.i_out_B;
+    RingBuffModulData.FPGA_mov_averge.output.i_out_C      += p->output.i_out_C;
+    RingBuffModulData.FPGA_mov_averge.output.p_active_A   += p->output.p_active_A;
+    RingBuffModulData.FPGA_mov_averge.output.p_active_B   += p->output.p_active_B;
+    RingBuffModulData.FPGA_mov_averge.output.p_active_C   += p->output.p_active_C;
+    RingBuffModulData.FPGA_mov_averge.output.p_apparent_A += p->output.p_apparent_A;
+    RingBuffModulData.FPGA_mov_averge.output.p_apparent_B += p->output.p_apparent_B;
+    RingBuffModulData.FPGA_mov_averge.output.p_apparent_C += p->output.p_apparent_C;
+    RingBuffModulData.FPGA_mov_averge.output.load_pct_A   += p->output.load_pct_A;
+    RingBuffModulData.FPGA_mov_averge.output.load_pct_B   += p->output.load_pct_B;
+    RingBuffModulData.FPGA_mov_averge.output.load_pct_C   += p->output.load_pct_C;
+    RingBuffModulData.FPGA_mov_averge.output.event_count  += p->output.event_count;
+
+    // Группа BATTERY
+    RingBuffModulData.FPGA_mov_averge.battery.bat_voltage      += p->battery.bat_voltage;
+    RingBuffModulData.FPGA_mov_averge.battery.bat_capacity     += p->battery.bat_capacity;
+    RingBuffModulData.FPGA_mov_averge.battery.bat_groups_count += p->battery.bat_groups_count;
+    RingBuffModulData.FPGA_mov_averge.battery.dc_bus_voltage   += p->battery.dc_bus_voltage;
+    RingBuffModulData.FPGA_mov_averge.battery.bat_current      += p->battery.bat_current;
+    RingBuffModulData.FPGA_mov_averge.battery.backup_time      += p->battery.backup_time;
+}
+
+void sub_sample_from_average(ModulData_t* ModulData)
+{
+    if (ModulData == NULL) {
+        return;
+    }
+
+    FpgaToEspPacket_t *p = &ModulData->packet;
+
+    // Группа INPUT
+    RingBuffModulData.FPGA_mov_averge.input.v_in_AB     -= p->input.v_in_AB;
+    RingBuffModulData.FPGA_mov_averge.input.v_in_BC     -= p->input.v_in_BC;
+    RingBuffModulData.FPGA_mov_averge.input.v_in_CA     -= p->input.v_in_CA;
+    RingBuffModulData.FPGA_mov_averge.input.v_bypass_A  -= p->input.v_bypass_A;
+    RingBuffModulData.FPGA_mov_averge.input.v_bypass_B  -= p->input.v_bypass_B;
+    RingBuffModulData.FPGA_mov_averge.input.v_bypass_C  -= p->input.v_bypass_C;
+    RingBuffModulData.FPGA_mov_averge.input.i_in_A      -= p->input.i_in_A;
+    RingBuffModulData.FPGA_mov_averge.input.i_in_B      -= p->input.i_in_B;
+    RingBuffModulData.FPGA_mov_averge.input.i_in_C      -= p->input.i_in_C;
+    RingBuffModulData.FPGA_mov_averge.input.freq_in     -= p->input.freq_in;
+
+    // Группа OUTPUT
+    RingBuffModulData.FPGA_mov_averge.output.v_out_A      -= p->output.v_out_A;
+    RingBuffModulData.FPGA_mov_averge.output.v_out_B      -= p->output.v_out_B;
+    RingBuffModulData.FPGA_mov_averge.output.v_out_C      -= p->output.v_out_C;
+    RingBuffModulData.FPGA_mov_averge.output.freq_out     -= p->output.freq_out;
+    RingBuffModulData.FPGA_mov_averge.output.i_out_A      -= p->output.i_out_A;
+    RingBuffModulData.FPGA_mov_averge.output.i_out_B      -= p->output.i_out_B;
+    RingBuffModulData.FPGA_mov_averge.output.i_out_C      -= p->output.i_out_C;
+    RingBuffModulData.FPGA_mov_averge.output.p_active_A   -= p->output.p_active_A;
+    RingBuffModulData.FPGA_mov_averge.output.p_active_B   -= p->output.p_active_B;
+    RingBuffModulData.FPGA_mov_averge.output.p_active_C   -= p->output.p_active_C;
+    RingBuffModulData.FPGA_mov_averge.output.p_apparent_A -= p->output.p_apparent_A;
+    RingBuffModulData.FPGA_mov_averge.output.p_apparent_B -= p->output.p_apparent_B;
+    RingBuffModulData.FPGA_mov_averge.output.p_apparent_C -= p->output.p_apparent_C;
+    RingBuffModulData.FPGA_mov_averge.output.load_pct_A   -= p->output.load_pct_A;
+    RingBuffModulData.FPGA_mov_averge.output.load_pct_B   -= p->output.load_pct_B;
+    RingBuffModulData.FPGA_mov_averge.output.load_pct_C   -= p->output.load_pct_C;
+    RingBuffModulData.FPGA_mov_averge.output.event_count  -= p->output.event_count;
+
+    // Группа BATTERY
+    RingBuffModulData.FPGA_mov_averge.battery.bat_voltage      -= p->battery.bat_voltage;
+    RingBuffModulData.FPGA_mov_averge.battery.bat_capacity     -= p->battery.bat_capacity;
+    RingBuffModulData.FPGA_mov_averge.battery.bat_groups_count -= p->battery.bat_groups_count;
+    RingBuffModulData.FPGA_mov_averge.battery.dc_bus_voltage   -= p->battery.dc_bus_voltage;
+    RingBuffModulData.FPGA_mov_averge.battery.bat_current      -= p->battery.bat_current;
+    RingBuffModulData.FPGA_mov_averge.battery.backup_time      -= p->battery.backup_time;
+}
+
+
 RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData)
 {
     if(RingBuffModulData.buffer == NULL || bufferMutex == NULL) return RINGBUF_NULL_POINTER;
 
-    if(xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(10)) == pdTRUE)                                     //<<--!Осторожно временная задержка котораяя может сильно ограничивать скорость 
+    if(xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(10)) == pdTRUE)                                     
     {
-        uint16_t next_head = (RingBuffModulData.head + 1) % RingBuffModulData.size_cpyes;
+        size_t next_head = (RingBuffModulData.head + 1) % RingBuffModulData.cnt_cpyes;
 
         if(next_head == RingBuffModulData.tail)
         {
+            sub_sample_from_average(&RingBuffModulData.buffer[RingBuffModulData.tail]);
+            add_sample_in_average(ModulData);
+            memcpy(&RingBuffModulData.buffer[RingBuffModulData.tail], ModulData, sizeof(ModulData_t));
             //Можно здесь отбрасывать приянтые данные, но щас релизована перезапись старых
-            RingBuffModulData.tail = (RingBuffModulData.tail + 1) % RingBuffModulData.size_cpyes;
-            // Теперь место под head освободилось (за счет потери старого элемента)
-            memcpy(&RingBuffModulData.buffer[RingBuffModulData.head], ModulData, sizeof(ModulData_t));
+            RingBuffModulData.tail = (RingBuffModulData.tail + 1) % RingBuffModulData.cnt_cpyes;
             RingBuffModulData.head = next_head;
             RingBuffModulData.is_full = true;
             xSemaphoreGive(bufferMutex);
             return RINGBUF_OVERFLOW;
         }else{
+            add_sample_in_average(ModulData);
+            RingBuffModulData.count++;
             memcpy(&RingBuffModulData.buffer[RingBuffModulData.head], ModulData, sizeof(ModulData_t));
             RingBuffModulData.head = next_head;
             RingBuffModulData.is_full = false;
@@ -120,170 +222,69 @@ RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData)
 
 }
 
-// Расчёт RMS по всем элементам групп status/alarms/input/output/battery
-// на основе всех валидных записей в кольцевом буфере.
-static void calculate_rms_from_buffer(void)
+// Расчёт скользящего среднего по окну из последних выборок,
+// используя накопленные суммы в FPGA_mov_averge.
+static void calculate_moving_average_from_buffer(void)
 {
     if (RingBuffModulData.buffer == NULL){
         return;
     }
 
-    if( get_elements_count(&RingBuffModulData) < (SIZE_OF_CIRCULAR_BUFFER - NUMBER_OF_REMAINING_EMPTY) )
-    {
+    // Ждём, пока в буфере наберётся достаточно выборок
+    if (get_elements_count(&RingBuffModulData) < (SIZE_OF_CIRCULAR_BUFFER - NUMBER_OF_REMAINING_EMPTY)) {
         return;
     }
 
-    float status_raw_sq   = 0.0;
-    float alarms_raw_sq   = 0.0;
-
-    float v_in_AB_sq      = 0.0;
-    float v_in_BC_sq      = 0.0;
-    float v_in_CA_sq      = 0.0;
-    float v_bypass_A_sq   = 0.0;
-    float v_bypass_B_sq   = 0.0;
-    float v_bypass_C_sq   = 0.0;
-    float i_in_A_sq       = 0.0;
-    float i_in_B_sq       = 0.0;
-    float i_in_C_sq       = 0.0;
-    float freq_in_sq      = 0.0;
-
-    float v_out_A_sq      = 0.0;
-    float v_out_B_sq      = 0.0;
-    float v_out_C_sq      = 0.0;
-    float freq_out_sq     = 0.0;
-    float i_out_A_sq      = 0.0;
-    float i_out_B_sq      = 0.0;
-    float i_out_C_sq      = 0.0;
-    float p_active_A_sq   = 0.0;
-    float p_active_B_sq   = 0.0;
-    float p_active_C_sq   = 0.0;
-    float p_apparent_A_sq = 0.0;
-    float p_apparent_B_sq = 0.0;
-    float p_apparent_C_sq = 0.0;
-    float load_pct_A_sq   = 0.0;
-    float load_pct_B_sq   = 0.0;
-    float load_pct_C_sq   = 0.0;
-    float event_count_sq  = 0.0;
-
-    float bat_voltage_sq      = 0.0;
-    float bat_capacity_sq     = 0.0;
-    float bat_groups_count_sq = 0.0;
-    float dc_bus_voltage_sq   = 0.0;
-    float bat_current_sq      = 0.0;
-    float backup_time_sq      = 0.0;
-
-    size_t samples = 0;
-
-    // Проходим по всей реальной длине буфера (кол-во элементов),
-    // не используя head/tail, и берём только валидные пакеты.
-    for (size_t i = 0; i < SIZE_OF_CIRCULAR_BUFFER; ++i) {
-        ModulData_t *entry = &RingBuffModulData.buffer[i];
-
-        // Валидный кадр: есть маркер начала
-        if (entry->packet.start_marker == 0) {
-            continue;
-        }
-
-        FpgaToEspPacket_t *p = &entry->packet;
-        samples++;
-
-        // Статусы и аварии по полю raw
-        status_raw_sq += (float)p->status.raw * (float)p->status.raw;
-        alarms_raw_sq += (float)p->alarms.raw * (float)p->alarms.raw;
-
-        v_in_AB_sq      += (float)p->input.v_in_AB      * (float)p->input.v_in_AB;
-        v_in_BC_sq      += (float)p->input.v_in_BC      * (float)p->input.v_in_BC;
-        v_in_CA_sq      += (float)p->input.v_in_CA      * (float)p->input.v_in_CA;
-        v_bypass_A_sq   += (float)p->input.v_bypass_A   * (float)p->input.v_bypass_A;
-        v_bypass_B_sq   += (float)p->input.v_bypass_B   * (float)p->input.v_bypass_B;
-        v_bypass_C_sq   += (float)p->input.v_bypass_C   * (float)p->input.v_bypass_C;
-        i_in_A_sq       += (float)p->input.i_in_A       * (float)p->input.i_in_A;
-        i_in_B_sq       += (float)p->input.i_in_B       * (float)p->input.i_in_B;
-        i_in_C_sq       += (float)p->input.i_in_C       * (float)p->input.i_in_C;
-        freq_in_sq      += (float)p->input.freq_in      * (float)p->input.freq_in;
-
-        v_out_A_sq      += (float)p->output.v_out_A      * (float)p->output.v_out_A;
-        v_out_B_sq      += (float)p->output.v_out_B      * (float)p->output.v_out_B;
-        v_out_C_sq      += (float)p->output.v_out_C      * (float)p->output.v_out_C;
-        freq_out_sq     += (float)p->output.freq_out     * (float)p->output.freq_out;
-        i_out_A_sq      += (float)p->output.i_out_A      * (float)p->output.i_out_A;
-        i_out_B_sq      += (float)p->output.i_out_B      * (float)p->output.i_out_B;
-        i_out_C_sq      += (float)p->output.i_out_C      * (float)p->output.i_out_C;
-        p_active_A_sq   += (float)p->output.p_active_A   * (float)p->output.p_active_A;
-        p_active_B_sq   += (float)p->output.p_active_B   * (float)p->output.p_active_B;
-        p_active_C_sq   += (float)p->output.p_active_C   * (float)p->output.p_active_C;
-        p_apparent_A_sq += (float)p->output.p_apparent_A * (float)p->output.p_apparent_A;
-        p_apparent_B_sq += (float)p->output.p_apparent_B * (float)p->output.p_apparent_B;
-        p_apparent_C_sq += (float)p->output.p_apparent_C * (float)p->output.p_apparent_C;
-        load_pct_A_sq   += (float)p->output.load_pct_A   * (float)p->output.load_pct_A;
-        load_pct_B_sq   += (float)p->output.load_pct_B   * (float)p->output.load_pct_B;
-        load_pct_C_sq   += (float)p->output.load_pct_C   * (float)p->output.load_pct_C;
-        event_count_sq  += (float)p->output.event_count  * (float)p->output.event_count;
-
-        bat_voltage_sq      += (float)p->battery.bat_voltage      * (float)p->battery.bat_voltage;
-        bat_capacity_sq     += (float)p->battery.bat_capacity     * (float)p->battery.bat_capacity;
-        bat_groups_count_sq += (float)p->battery.bat_groups_count * (float)p->battery.bat_groups_count;
-        dc_bus_voltage_sq   += (float)p->battery.dc_bus_voltage   * (float)p->battery.dc_bus_voltage;
-        bat_current_sq      += (float)p->battery.bat_current      * (float)p->battery.bat_current;
-        backup_time_sq      += (float)p->battery.backup_time      * (float)p->battery.backup_time;
-    }
-
+    size_t samples = RingBuffModulData.count;
     if (samples == 0) {
         return;
     }
 
-    float inv_n = 1.0 / (float)samples;
+    // Средние значения по группам input/output/battery
+    gFpgaAvrData.input.v_in_AB      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.v_in_AB      / samples);
+    gFpgaAvrData.input.v_in_BC      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.v_in_BC      / samples);
+    gFpgaAvrData.input.v_in_CA      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.v_in_CA      / samples);
+    gFpgaAvrData.input.v_bypass_A   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.v_bypass_A   / samples);
+    gFpgaAvrData.input.v_bypass_B   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.v_bypass_B   / samples);
+    gFpgaAvrData.input.v_bypass_C   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.v_bypass_C   / samples);
+    gFpgaAvrData.input.i_in_A       = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.i_in_A       / samples);
+    gFpgaAvrData.input.i_in_B       = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.i_in_B       / samples);
+    gFpgaAvrData.input.i_in_C       = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.i_in_C       / samples);
+    gFpgaAvrData.input.freq_in      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.input.freq_in      / samples);
 
-    gFpgaRmsData.status.raw  = (uint16_t)sqrt(status_raw_sq * inv_n);
-    gFpgaRmsData.alarms.raw  = (uint16_t)sqrt(alarms_raw_sq * inv_n);
+    gFpgaAvrData.output.v_out_A      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.v_out_A      / samples);
+    gFpgaAvrData.output.v_out_B      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.v_out_B      / samples);
+    gFpgaAvrData.output.v_out_C      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.v_out_C      / samples);
+    gFpgaAvrData.output.freq_out     = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.freq_out     / samples);
+    gFpgaAvrData.output.i_out_A      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.i_out_A      / samples);
+    gFpgaAvrData.output.i_out_B      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.i_out_B      / samples);
+    gFpgaAvrData.output.i_out_C      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.i_out_C      / samples);
+    gFpgaAvrData.output.p_active_A   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_active_A   / samples);
+    gFpgaRmsData.output.p_active_B   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_active_B   / samples);
+    gFpgaAvrData.output.p_active_C   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_active_C   / samples);
+    gFpgaAvrData.output.p_apparent_A = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_apparent_A / samples);
+    gFpgaAvrData.output.p_apparent_B = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_apparent_B / samples);
+    gFpgaAvrData.output.p_apparent_C = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_apparent_C / samples);
+    gFpgaAvrData.output.load_pct_A   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.load_pct_A   / samples);
+    gFpgaAvrData.output.load_pct_B   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.load_pct_B   / samples);
+    gFpgaAvrData.output.load_pct_C   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.load_pct_C   / samples);
+    gFpgaAvrData.output.event_count  = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.event_count  / samples);
 
-    gFpgaRmsData.input.v_in_AB      = (uint16_t)sqrt(v_in_AB_sq * inv_n);
-    gFpgaRmsData.input.v_in_BC      = (uint16_t)sqrt(v_in_BC_sq * inv_n);
-    gFpgaRmsData.input.v_in_CA      = (uint16_t)sqrt(v_in_CA_sq * inv_n);
-    gFpgaRmsData.input.v_bypass_A   = (uint16_t)sqrt(v_bypass_A_sq * inv_n);
-    gFpgaRmsData.input.v_bypass_B   = (uint16_t)sqrt(v_bypass_B_sq * inv_n);
-    gFpgaRmsData.input.v_bypass_C   = (uint16_t)sqrt(v_bypass_C_sq * inv_n);
-    gFpgaRmsData.input.i_in_A       = (uint16_t)sqrt(i_in_A_sq * inv_n);
-    gFpgaRmsData.input.i_in_B       = (uint16_t)sqrt(i_in_B_sq * inv_n);
-    gFpgaRmsData.input.i_in_C       = (uint16_t)sqrt(i_in_C_sq * inv_n);
-    gFpgaRmsData.input.freq_in      = (uint16_t)sqrt(freq_in_sq * inv_n);
-
-    gFpgaRmsData.output.v_out_A      = (uint16_t)sqrt(v_out_A_sq * inv_n);
-    gFpgaRmsData.output.v_out_B      = (uint16_t)sqrt(v_out_B_sq * inv_n);
-    gFpgaRmsData.output.v_out_C      = (uint16_t)sqrt(v_out_C_sq * inv_n);
-    gFpgaRmsData.output.freq_out     = (uint16_t)sqrt(freq_out_sq * inv_n);
-    gFpgaRmsData.output.i_out_A      = (uint16_t)sqrt(i_out_A_sq * inv_n);
-    gFpgaRmsData.output.i_out_B      = (uint16_t)sqrt(i_out_B_sq * inv_n);
-    gFpgaRmsData.output.i_out_C      = (uint16_t)sqrt(i_out_C_sq * inv_n);
-    gFpgaRmsData.output.p_active_A   = (uint16_t)sqrt(p_active_A_sq * inv_n);
-    gFpgaRmsData.output.p_active_B   = (uint16_t)sqrt(p_active_B_sq * inv_n);
-    gFpgaRmsData.output.p_active_C   = (uint16_t)sqrt(p_active_C_sq * inv_n);
-    gFpgaRmsData.output.p_apparent_A = (uint16_t)sqrt(p_apparent_A_sq * inv_n);
-    gFpgaRmsData.output.p_apparent_B = (uint16_t)sqrt(p_apparent_B_sq * inv_n);
-    gFpgaRmsData.output.p_apparent_C = (uint16_t)sqrt(p_apparent_C_sq * inv_n);
-    gFpgaRmsData.output.load_pct_A   = (uint16_t)sqrt(load_pct_A_sq * inv_n);
-    gFpgaRmsData.output.load_pct_B   = (uint16_t)sqrt(load_pct_B_sq * inv_n);
-    gFpgaRmsData.output.load_pct_C   = (uint16_t)sqrt(load_pct_C_sq * inv_n);
-    gFpgaRmsData.output.event_count  = (uint16_t)sqrt(event_count_sq * inv_n);
-
-    gFpgaRmsData.battery.bat_voltage      = (uint16_t)sqrt(bat_voltage_sq * inv_n);
-    gFpgaRmsData.battery.bat_capacity     = (uint16_t)sqrt(bat_capacity_sq * inv_n);
-    gFpgaRmsData.battery.bat_groups_count = (uint16_t)sqrt(bat_groups_count_sq * inv_n);
-    gFpgaRmsData.battery.dc_bus_voltage   = (uint16_t)sqrt(dc_bus_voltage_sq * inv_n);
-    gFpgaRmsData.battery.bat_current      = (uint16_t)sqrt(bat_current_sq * inv_n);
-    gFpgaRmsData.battery.backup_time      = (uint16_t)sqrt(backup_time_sq * inv_n);
-
-    RingBuffModulData.tail = (RingBuffModulData.tail + 1) % RingBuffModulData.size_cpyes;
-    RingBuffModulData.is_full = false;
+    gFpgaAvrData.battery.bat_voltage      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.battery.bat_voltage      / samples);
+    gFpgaAvrData.battery.bat_capacity     = (uint16_t)(RingBuffModulData.FPGA_mov_averge.battery.bat_capacity     / samples);
+    gFpgaAvrData.battery.bat_groups_count = (uint16_t)(RingBuffModulData.FPGA_mov_averge.battery.bat_groups_count / samples);
+    gFpgaAvrData.battery.dc_bus_voltage   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.battery.dc_bus_voltage   / samples);
+    gFpgaAvrData.battery.bat_current      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.battery.bat_current      / samples);
+    gFpgaAvrData.battery.backup_time      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.battery.backup_time      / samples);
 }
 
-// Вывод RMS-значений по образу spi_slave_print_ups_packet,
+// Вывод средних значений по образу spi_slave_print_ups_packet,
 // но без полей заголовка/CRC, только группы status/alarms/input/output/battery.
-static void logger_print_rms_data(const FpgaRmsData_t *r)
+static void logger_print_avg_data(const FpgaRmsData_t *r)
 {
-    const char *src = "RMS";
+    const char *src = "AVG";
 
-    ESP_LOGI(TAG_RMS, "[%s] === UPS RMS DATA ===", src);
+    ESP_LOGI(TAG_RMS, "[%s] === UPS AVG DATA ===", src);
     ESP_LOGI(TAG_RMS, "[%s] [STATUS] Grid:%u Byp:%u Rect:%u Inv:%u PwrInv:%u PwrByp:%u Sync:%u",
              src,
              (unsigned)r->status.grid_status, (unsigned)r->status.bypass_grid_status,
@@ -392,7 +393,7 @@ static void print_error_flag_frame(RingBuffModulData_t *rb, UpsRegisterFlags_t *
     }
 
     // Индекс последнего записанного кадра (head — следующая позиция записи)
-    size_t last_idx = (rb->head + rb->size_cpyes - 1) % rb->size_cpyes;
+    size_t last_idx = (rb->head + rb->cnt_cpyes - 1) % rb->cnt_cpyes;
     FpgaToEspPacket_t *pkt = &rb->buffer[last_idx].packet;
 
     if (pkt->start_marker != 0xAA55AA55u) {
@@ -453,27 +454,31 @@ void time_calculate_DEBUG(RingBuffModulData_t *rb)
 
     FpgaToEspPacket_t* pkTail = &rb->buffer[rb->tail].packet;
 
-    size_t last_written_idx = (rb->head + rb->size_cpyes - 1) % rb->size_cpyes;
+    size_t last_written_idx = (rb->head + rb->cnt_cpyes - 1) % rb->cnt_cpyes;
     FpgaToEspPacket_t* pkHead = &rb->buffer[last_written_idx].packet;
 
     // Вычитаем из НОВОГО времени СТАРОЕ (а не наоборот, чтобы не было переполнения uint32_t)
     uint32_t deltaTime_ms = pkHead->system_time_ms - pkTail->system_time_ms; 
     
-    ESP_LOGI(TAG_TIME, "Delta: %u ms, Elements: %d, Buf_statusЖ %s", (unsigned)deltaTime_ms, get_elements_count(rb), rb->is_full? "FULL" : "NOT FULL");
+    ESP_LOGI(TAG_TIME, "Delta: %u ms, Elements: %d, Buf_status: %s", (unsigned)deltaTime_ms, get_elements_count(rb), rb->is_full? "FULL" : "NOT FULL");
 }
 
 static void logger_proc_task(void *pvParameters)
 {
     uint64_t last_print_ms = 0;
+     uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000); 
 
     for(;;)
     {
-        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000); 
-        time_calculate_DEBUG(&RingBuffModulData);
+        if( ((uint32_t)(esp_timer_get_time() / 1000) - now_ms) > 500)
+        {
+            time_calculate_DEBUG(&RingBuffModulData);
+            now_ms = (uint32_t)(esp_timer_get_time() / 1000); 
+        }
         if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) == pdTRUE)
         {
-            // Пересчитываем RMS по всем валидным кадрам в буфере
-            calculate_rms_from_buffer();
+            // Пересчитываем RMS по текущему окну скользящего среднего
+            calculate_moving_average_from_buffer();
             xSemaphoreGive(bufferMutex);
             // UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);                                    // <<-- !Проверка утечки стека 
             // ESP_LOGI(TAG, "logger stack free: %u bytes", (unsigned)(hwm * sizeof(StackType_t)));
@@ -487,11 +492,11 @@ static void logger_proc_task(void *pvParameters)
             // Делаем локальную копию, чтобы вывод не зависел от мьютекса
             FpgaRmsData_t snapshot;
             memcpy(&snapshot, &gFpgaRmsData, sizeof(snapshot));
-            //logger_print_rms_data(&snapshot);
+            //logger_print_avg_data(&snapshot);
             //ESP_LOGI(TAG, "Current time: %u", now_ms);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 

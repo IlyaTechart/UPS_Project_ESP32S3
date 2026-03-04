@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+
 #include <stdlib.h>
 #include "util.h"
 #include "esp_log.h"
@@ -26,9 +27,28 @@
 #include "wifi_control.h"
 #include "spi_handler_v2.h"
 #include "logger_handler.h"
+#include "esp_app_trace.h"
 
 
 static const char *TAG = "bridge_main";
+
+#define ENABLE_WEB_INTERFACE 0
+#define ENABLE_ESP_BRIDGE    0
+
+#if CONFIG_APPTRACE_SV_ENABLE
+
+#define SYSVIEW_EXAMPLE_SEND_EVENT_ID     0
+#define SYSVIEW_EXAMPLE_WAIT_EVENT_ID     1
+
+#define SYSVIEW_EXAMPLE_SEND_EVENT_START()  SEGGER_SYSVIEW_OnUserStart(SYSVIEW_EXAMPLE_SEND_EVENT_ID)
+#define SYSVIEW_EXAMPLE_SEND_EVENT_END(_val_)    SEGGER_SYSVIEW_OnUserStop(SYSVIEW_EXAMPLE_SEND_EVENT_ID)
+#define SYSVIEW_EXAMPLE_WAIT_EVENT_START()  SEGGER_SYSVIEW_OnUserStart(SYSVIEW_EXAMPLE_WAIT_EVENT_ID)
+#define SYSVIEW_EXAMPLE_WAIT_EVENT_END(_val_)    SEGGER_SYSVIEW_OnUserStop(SYSVIEW_EXAMPLE_WAIT_EVENT_ID)
+
+#endif
+
+
+#if ENABLE_ESP_BRIDGE
 
 #define TUSB_DESC_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_VENDOR_DESC_LEN + TUD_MSC_DESC_LEN)
 
@@ -216,6 +236,8 @@ static void serial_rx_activity_callback(bool active)
     gpio_set_level(LED_TX, active ? LED_TX_ON : LED_TX_OFF);
 }
 
+#endif
+
 static void init_led_gpios(void)
 {
     gpio_config_t io_conf = {};
@@ -234,6 +256,8 @@ static void init_led_gpios(void)
     ESP_LOGI(TAG, "LED GPIO init done");
 }
 
+#if ENABLE_ESP_BRIDGE
+
 static void int_usb_phy(void)
 {
     usb_phy_config_t phy_config = {
@@ -247,13 +271,16 @@ static void int_usb_phy(void)
     usb_phy_handle_t phy_handle;
     usb_new_phy(&phy_config, &phy_handle);
 }
+#endif
 
 void app_main(void)
 {
-
+  
     BaseType_t  xTaskReturned = {0};
 
     init_led_gpios(); // Keep this at the beginning. LEDs are used for error reporting.
+
+    #if ENABLE_ESP_BRIDGE
 
     init_serial_no();
 
@@ -268,13 +295,19 @@ void app_main(void)
     tusb_init();
     msc_init();
 
-    wifi_web_init();
-
     xTaskReturned = xTaskCreate(tusb_device_task, "tusb_device_task", 4 * 1024, NULL, 5, NULL);
     if(xTaskReturned != pdPASS)
     {
         ESP_LOGE(TAG, "IS NOT CREATED: tusb_device_task");
     }
+
+    #endif
+
+    #if ENABLE_WEB_INTERFACE
+
+    wifi_web_init();
+
+    #endif
 
     spi_slave_init();
 
