@@ -27,13 +27,16 @@
 #include "wifi_control.h"
 #include "spi_handler_v2.h"
 #include "logger_handler.h"
+#include "main.h"
 //#include "esp_app_trace.h"
 
 
 static const char *TAG = "bridge_main";
 
-#define ENABLE_WEB_INTERFACE 1
-#define ENABLE_ESP_BRIDGE    0
+DeviceFuncState_t DeviceFuncState = WEB_FACE;
+
+#define ENABLE_WEB_INTERFACE 0
+#define ENABLE_ESP_BRIDGE    1
 
 #if CONFIG_APPTRACE_SV_ENABLE
 
@@ -105,6 +108,8 @@ static uint8_t const desc_configuration[] = {
 #define MAC_BYTES       6
 
 static char serial_descriptor[MAC_BYTES * 2 + 1] = {'\0'}; // 2 chars per hexnumber + '\0'
+
+static void main_Task(void *pvParameters);
 
 static char const *string_desc_arr[] = {
     (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
@@ -313,6 +318,24 @@ void app_main(void)
 
     logger_Inint();
 
+    xTaskReturned = xTaskCreatePinnedToCore( main_Task, "Main Taks", 4 * 1024, NULL, 8, NULL, 0);
+    if(xTaskReturned != pdPASS)
+    {
+        ESP_LOGE(TAG, "IS NOT CREATED: Main Taks");
+    }
+
     ESP_LOGI(TAG, "Program out of the MAIN_app");
 
+}
+
+static void main_Task(void *pvParameters)
+{
+
+
+    for(;;)
+    {
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+    }
 }

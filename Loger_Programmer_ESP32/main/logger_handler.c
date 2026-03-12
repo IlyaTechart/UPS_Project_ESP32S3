@@ -43,7 +43,7 @@ static void logger_proc_task(void *pvParameters);
 
 void logger_Inint(void)
 {
-    bufferMutex = xSemaphoreCreateMutex();        // Создаём тьютек
+    bufferMutex = xSemaphoreCreateMutex();        // Создаём мьютекс
     if (bufferMutex == NULL) {
         ESP_LOGE(TAG, "Mutex create failed");
         return;
@@ -477,7 +477,7 @@ static void logger_proc_task(void *pvParameters)
         }
         if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) == pdTRUE)
         {
-            // Пересчитываем RMS по текущему окну скользящего среднего
+            // Пересчитываем среднее по текущему окну скользящего среднего
             calculate_moving_average_from_buffer();
             xSemaphoreGive(bufferMutex);
             // UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);                                    // <<-- !Проверка утечки стека 

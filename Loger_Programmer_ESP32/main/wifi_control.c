@@ -28,8 +28,8 @@ static const char *TAG = "WEB_CTRL";
 static int s_retry_num = 0;
 static int s_led_state = 0;
 
-// Ссылка на глобальные данные (определены в spi_handler_v2.c при CONFIG_SPI_SLAVE_SPI2_ENABLED)
-#if CONFIG_SPI_SLAVE_SPI2_ENABLED
+// Глобальные данные для WEB (ModulData объявлен в spi_handler_v2.h при CONFIG_SPI_SLAVE_SPI2_ENABLED или CONFIG_SPI_SLAVE_SPI3_ENABLED)
+#if CONFIG_SPI_SLAVE_SPI2_ENABLED || CONFIG_SPI_SLAVE_SPI3_ENABLED
 extern volatile ModulData_t ModulData;
 #endif
 
@@ -221,7 +221,7 @@ static const char* index_html =
 /* Структура из frames_structure.h: status/alarms — битполя (0/1), input/output/battery — uint16_t (x0.1, x0.01, целые). */
 char* generate_ups_json_string(void)
 {
-#if !CONFIG_SPI_SLAVE_SPI2_ENABLED
+#if !CONFIG_SPI_SLAVE_SPI2_ENABLED && !CONFIG_SPI_SLAVE_SPI3_ENABLED
     (void)0;
     return cJSON_PrintUnformatted(cJSON_CreateObject());
 #endif

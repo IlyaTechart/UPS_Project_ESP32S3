@@ -21,11 +21,11 @@
  * Переопределить в sdkconfig, CMake или -D при компиляции.
  * ---------------------------------------------------------------------------- */
 #ifndef CONFIG_SPI_SLAVE_SPI2_ENABLED
-#define CONFIG_SPI_SLAVE_SPI2_ENABLED  1
+#define CONFIG_SPI_SLAVE_SPI2_ENABLED  0
 #endif
 
 #ifndef CONFIG_SPI_SLAVE_SPI3_ENABLED
-#define CONFIG_SPI_SLAVE_SPI3_ENABLED  0
+#define CONFIG_SPI_SLAVE_SPI3_ENABLED  1
 #endif
 
 #if !CONFIG_SPI_SLAVE_SPI2_ENABLED && !CONFIG_SPI_SLAVE_SPI3_ENABLED
@@ -44,8 +44,12 @@
  * Пины SPI3 (используются при CONFIG_SPI_SLAVE_SPI3_ENABLED)
  * ---------------------------------------------------------------------------- */
 #if CONFIG_SPI_SLAVE_SPI3_ENABLED
-#define SPI_SLAVE_SPI3_GPIO_MOSI  35
-#define SPI_SLAVE_SPI3_GPIO_MISO  36
+// #define SPI_SLAVE_SPI3_GPIO_MOSI  35
+// #define SPI_SLAVE_SPI3_GPIO_MISO  36
+// #define SPI_SLAVE_SPI3_GPIO_SCLK  9
+// #define SPI_SLAVE_SPI3_GPIO_CS    14
+#define SPI_SLAVE_SPI3_GPIO_MOSI  21
+#define SPI_SLAVE_SPI3_GPIO_MISO  38
 #define SPI_SLAVE_SPI3_GPIO_SCLK  9
 #define SPI_SLAVE_SPI3_GPIO_CS    14
 #endif
@@ -73,8 +77,8 @@ typedef struct {
 } spi_slave_message_t;
 
 
-/* Для совместимости с wifi_control.c: глобальный буфер данных SPI2 (определён в spi_handler_v2.c при CONFIG_SPI_SLAVE_SPI2_ENABLED) */
-#if CONFIG_SPI_SLAVE_SPI2_ENABLED
+/* Для совместимости с wifi_control.c и логером: глобальный буфер данных (питается от SPI3 при включённом SPI3, иначе от SPI2) */
+#if CONFIG_SPI_SLAVE_SPI2_ENABLED || CONFIG_SPI_SLAVE_SPI3_ENABLED
 extern volatile ModulData_t ModulData;
 #endif
 

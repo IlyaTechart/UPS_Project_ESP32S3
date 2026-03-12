@@ -42,17 +42,21 @@ extern RingBuffModulData_t RingBuffModulData;
 /* ----------------------------------------------------------------------------
  * Буферы и данные по шинам
  * ---------------------------------------------------------------------------- */
+#if CONFIG_SPI_SLAVE_SPI2_ENABLED || CONFIG_SPI_SLAVE_SPI3_ENABLED
+/* Глобальный буфер: используется wifi_control.c и логером. Питается от SPI3 (при включённом SPI3) или от SPI2 (только SPI2). */
+volatile ModulData_t ModulData;
+#endif
+
 #if CONFIG_SPI_SLAVE_SPI2_ENABLED
 static volatile spi_slave_buffers_t s_spi2_buffers;
 static volatile spi_slave_message_t s_spi2_msg;
-/* Глобальный буфер SPI2: используется wifi_control.c для generate_ups_json_string */
-volatile ModulData_t ModulData;
+/* Локальный буфер SPI2: используется только когда включён и SPI3 (SPI2 — вторичный канал) */
+static volatile ModulData_t s_modul_data_spi2;
 #endif
 
 #if CONFIG_SPI_SLAVE_SPI3_ENABLED
 static volatile spi_slave_buffers_t s_spi3_buffers;
 static volatile spi_slave_message_t s_spi3_msg;
-static volatile ModulData_t s_modul_data_spi3;
 #endif
 
 //для дебага 
@@ -120,7 +124,9 @@ void spi_slave_init(void)
         ESP_LOGE(TAG, "Failed to create SPI3 queue(s)");
         return;
     }
+#if CONFIG_SPI_SLAVE_SPI2_ENABLED
     xQueueAddToSet(s_spi2_evt_queue, s_spi_evt_queue_set);
+#endif
     xQueueAddToSet(s_spi3_evt_queue, s_spi_evt_queue_set);
 #endif
 
@@ -184,7 +190,7 @@ void spi_slave_init(void)
             s_spi3_driver_sem = xSemaphoreCreateBinary();
             if (s_spi3_driver_sem != NULL) {
                 xSemaphoreGive(s_spi3_driver_sem);
-                if (xTaskCreate(spi_slave_driver_task_spi3, "spi3_drv", 4096, NULL, 5, NULL) != pdPASS) {
+                if (xTaskCreate(spi_slave_driver_task_spi3, "spi3_drv", 4096, NULL, 7, NULL) != pdPASS) {
                     ESP_LOGE(TAG, "Failed to create SPI3 driver task");
                 }
             }
@@ -213,7 +219,11 @@ static void spi_slave_driver_task_spi2(void *pvParameters)
 
     for (;;) {
         memset(s_spi2_buffers.rx_buffer, 0, SPI_SLAVE_PAYLOAD_SIZE);
+#if CONFIG_SPI_SLAVE_SPI3_ENABLED
+        memcpy(s_spi2_buffers.tx_buffer, s_modul_data_spi2.Tx_Buffer, sizeof(s_modul_data_spi2.Tx_Buffer));
+#else
         memcpy(s_spi2_buffers.tx_buffer, ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer));
+#endif
         t.tx_buffer = s_spi2_buffers.tx_buffer;
         t.rx_buffer = s_spi2_buffers.rx_buffer;
 
@@ -238,7 +248,7 @@ static void spi_slave_driver_task_spi3(void *pvParameters)
 
     for (;;) {
         memset(s_spi3_buffers.rx_buffer, 0, SPI_SLAVE_PAYLOAD_SIZE);
-        memcpy(s_spi3_buffers.tx_buffer, s_modul_data_spi3.Tx_Buffer, sizeof(s_modul_data_spi3.Tx_Buffer));
+        memcpy(s_spi3_buffers.tx_buffer, ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer));
         t.tx_buffer = s_spi3_buffers.tx_buffer;
         t.rx_buffer = s_spi3_buffers.rx_buffer;
 
@@ -303,7 +313,7 @@ static void spi_slave_processing_task(void *pvParameters)
 
     spi_slave_message_t msg;
 
-#if CONFIG_SPI_SLAVE_SPI3_ENABLED
+#if CONFIG_SPI_SLAVE_SPI2_ENABLED
     /* Оба SPI: ждём любое событие из набора очередей */
     for (;;) {
         QueueHandle_t active = (QueueHandle_t)xQueueSelectFromSet(s_spi_evt_queue_set, portMAX_DELAY);
@@ -321,18 +331,23 @@ static void spi_slave_processing_task(void *pvParameters)
         }
 
         if (from_spi2) {
+            /* SPI2 — вторичный канал: только локальный буфер и вывод в лог */
+            memcpy(s_modul_data_spi2.Tx_Buffer, msg.data, msg.len);
+            if (s_modul_data_spi2.packet.crc32 != spi_slave_crc32(s_modul_data_spi2.Tx_Buffer, msg.len - 4)) {
+                ESP_LOGE(TAG, "[%s] CRC error", tag);
+            } else {
+                //spi_slave_print_ups_packet(&s_modul_data_spi2.packet, tag);
+            }
+        } else {
+            /* SPI3 — основной канал: ModulData, кольцевой буфер, логер/WEB */
             memcpy(ModulData.Tx_Buffer, msg.data, msg.len);
+            ModulData.packet.system_time_ms = (uint32_t)(esp_timer_get_time() / 1000);
+
             if (ModulData.packet.crc32 != spi_slave_crc32(ModulData.Tx_Buffer, msg.len - 4)) {
                 ESP_LOGE(TAG, "[%s] CRC error", tag);
             } else {
-                spi_slave_print_ups_packet(&ModulData.packet, tag);
-            }
-        } else {
-            memcpy(s_modul_data_spi3.Tx_Buffer, msg.data, msg.len);
-            if (s_modul_data_spi3.packet.crc32 != spi_slave_crc32(s_modul_data_spi3.Tx_Buffer, msg.len - 4)) {
-                ESP_LOGE(TAG, "[%s] CRC error", tag);
-            } else {
-                spi_slave_print_ups_packet(&s_modul_data_spi3.packet, tag);
+                RingBuffStatus = RingBuffWrite((ModulData_t *)&ModulData);
+               // spi_slave_print_ups_packet(&ModulData.packet, tag);   /* при необходимости раскомментировать */
             }
         }
         xSemaphoreGive(sem);
@@ -340,11 +355,13 @@ static void spi_slave_processing_task(void *pvParameters)
 #else
     /* Только SPI2: одна очередь */
     for (;;) {
-        if (xQueueReceive(s_spi2_evt_queue, &msg, portMAX_DELAY) != pdPASS) continue;
+        QueueHandle_t active = (QueueHandle_t)xQueueSelectFromSet(s_spi_evt_queue_set, portMAX_DELAY);
+        if (active == NULL) continue;
+        if (xQueueReceive(active, &msg, 0) != pdPASS) continue;
 
         if (msg.len < 4) {
-            ESP_LOGW(TAG, "[SPI2] Too short packet: %lu bytes", (unsigned long)msg.len);
-            xSemaphoreGive(s_spi2_driver_sem);
+            ESP_LOGW(TAG, "[SPI3] Too short packet: %lu bytes", (unsigned long)msg.len);
+            xSemaphoreGive(s_spi3_driver_sem);
             continue;
         }
         memcpy(ModulData.Tx_Buffer, msg.data, msg.len);
@@ -365,12 +382,12 @@ static void spi_slave_processing_task(void *pvParameters)
 
 
         if (ModulData.packet.crc32 != spi_slave_crc32(ModulData.Tx_Buffer, msg.len - 4)) {
-            ESP_LOGE(TAG, "[SPI2] CRC error");
+            ESP_LOGE(TAG, "[SPI3] CRC error");
         } else {
             // ESP_LOGI(TAG_UPS, "Dela Time: %lu", (unsigned)(ModulData.packet.system_time_ms));
             //spi_slave_print_ups_packet(&ModulData.packet, "SPI2");
         }
-        xSemaphoreGive(s_spi2_driver_sem);
+        xSemaphoreGive(s_spi3_driver_sem);
     }
 #endif
 }

@@ -112,7 +112,9 @@ void tud_cdc_rx_cb(const uint8_t itf)
     const uint32_t rx_size = tud_cdc_n_read(itf, buf, CFG_TUD_CDC_RX_BUFSIZE);
     if (rx_size > 0) {
         ESP_LOGD(TAG, "USB CDC -> Transport (%" PRIu32 " bytes)", rx_size);
-        ESP_LOG_BUFFER_HEXDUMP("USB CDC -> Transport", buf, rx_size, ESP_LOG_DEBUG);
+        ESP_LOG_BUFFER_HEXDUMP("USB CDC -> Transport", buf, rx_size, ESP_LOG_DEBUG);  // <<-- Работаем в этом месте 
+
+        
 
         // Send to transport (could be UART, SPI, I2C, etc.)
         serial_handler_send_data(buf, rx_size);
