@@ -138,6 +138,7 @@ int main(void)
 		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, SET);
 		  HAL_Delay(TIME_DELAY);
 	  }else{
+		  SetVelueInStruckt(&ModulData);
 		  ModulData.packet.status.raw = (uint16_t)0;
 		  ModulData.packet.alarms.raw = (uint16_t)0;
 		  ModulData.packet.crc32 = calculate_crc32(ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer) - 4);

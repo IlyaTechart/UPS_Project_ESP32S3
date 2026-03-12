@@ -118,9 +118,20 @@ typedef struct{
 
 }RingBuffModulData_t;
 
+
+// Структура для хранения средних значений по тем же группам,
+// что и в основном пакете (без служебных полей заголовка/CRC)
+typedef struct {
+    GroupStatus_t  status;
+    GroupAlarms_t  alarms;
+    GroupInput_t   input;
+    GroupOutput_t  output;
+    GroupBattery_t battery;
+} FpgaRmsData_t;
+
 void logger_Inint(void);
 
 RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData);
 
 // Глобальная структура с RMS-значениями по данным от FPGA
-extern FpgaRmsData_t gFpgaRmsData;
+extern FpgaRmsData_t gFpgaAvrData;

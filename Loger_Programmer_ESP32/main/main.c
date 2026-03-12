@@ -27,12 +27,12 @@
 #include "wifi_control.h"
 #include "spi_handler_v2.h"
 #include "logger_handler.h"
-#include "esp_app_trace.h"
+//#include "esp_app_trace.h"
 
 
 static const char *TAG = "bridge_main";
 
-#define ENABLE_WEB_INTERFACE 0
+#define ENABLE_WEB_INTERFACE 1
 #define ENABLE_ESP_BRIDGE    0
 
 #if CONFIG_APPTRACE_SV_ENABLE

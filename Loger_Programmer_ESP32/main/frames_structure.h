@@ -129,14 +129,4 @@ typedef union {
 }ModulData_t;
 
 
-// Структура для хранения RMS-значений по тем же группам,
-// что и в основном пакете (без служебных полей заголовка/CRC)
-typedef struct {
-    GroupStatus_t  status;
-    GroupAlarms_t  alarms;
-    GroupInput_t   input;
-    GroupOutput_t  output;
-    GroupBattery_t battery;
-} FpgaRmsData_t;
-
 

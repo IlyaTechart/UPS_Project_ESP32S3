@@ -260,7 +260,7 @@ static void calculate_moving_average_from_buffer(void)
     gFpgaAvrData.output.i_out_B      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.i_out_B      / samples);
     gFpgaAvrData.output.i_out_C      = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.i_out_C      / samples);
     gFpgaAvrData.output.p_active_A   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_active_A   / samples);
-    gFpgaRmsData.output.p_active_B   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_active_B   / samples);
+    gFpgaAvrData.output.p_active_B   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_active_B   / samples);
     gFpgaAvrData.output.p_active_C   = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_active_C   / samples);
     gFpgaAvrData.output.p_apparent_A = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_apparent_A / samples);
     gFpgaAvrData.output.p_apparent_B = (uint16_t)(RingBuffModulData.FPGA_mov_averge.output.p_apparent_B / samples);
@@ -491,7 +491,7 @@ static void logger_proc_task(void *pvParameters)
 
             // Делаем локальную копию, чтобы вывод не зависел от мьютекса
             FpgaRmsData_t snapshot;
-            memcpy(&snapshot, &gFpgaRmsData, sizeof(snapshot));
+            memcpy(&snapshot, &gFpgaAvrData, sizeof(snapshot));
             //logger_print_avg_data(&snapshot);
             //ESP_LOGI(TAG, "Current time: %u", now_ms);
         }
