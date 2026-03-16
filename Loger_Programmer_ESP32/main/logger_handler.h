@@ -130,6 +130,7 @@ typedef struct {
 } FpgaRmsData_t;
 
 void logger_Inint(void);
+void logger_DeInint(void);
 
 RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData);
 
