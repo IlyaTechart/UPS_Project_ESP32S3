@@ -27,7 +27,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#define TIME_DELAY 50
+#define TIME_DELAY 200
 
 /* USER CODE END PTD */
 

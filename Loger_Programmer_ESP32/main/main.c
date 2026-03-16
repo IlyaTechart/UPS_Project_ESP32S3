@@ -31,12 +31,9 @@
 //#include "esp_app_trace.h"
 
 
-static const char *TAG = "bridge_main";
-
-DeviceFuncState_t DeviceFuncState = WEB_FACE;
-
 #define ENABLE_WEB_INTERFACE 0
 #define ENABLE_ESP_BRIDGE    1
+#define ENABLE_LOGGER 0
 
 #if CONFIG_APPTRACE_SV_ENABLE
 
@@ -49,6 +46,12 @@ DeviceFuncState_t DeviceFuncState = WEB_FACE;
 #define SYSVIEW_EXAMPLE_WAIT_EVENT_END(_val_)    SEGGER_SYSVIEW_OnUserStop(SYSVIEW_EXAMPLE_WAIT_EVENT_ID)
 
 #endif
+
+static const char *TAG = "bridge_main";
+
+DeviceFuncState_t DeviceFuncState = WEB_FACE;
+RX_USB_data_state_t RX_USB_data_state = Rx_DATA_NOP;
+extern QueueHandle_t queue_serial_RX;
 
 
 #if ENABLE_ESP_BRIDGE
@@ -314,9 +317,13 @@ void app_main(void)
 
     #endif
 
+    #if ENABLE_LOGGER
+
     spi_slave_init();
 
     logger_Inint();
+
+    #endif
 
     xTaskReturned = xTaskCreatePinnedToCore( main_Task, "Main Taks", 4 * 1024, NULL, 8, NULL, 0);
     if(xTaskReturned != pdPASS)
@@ -330,10 +337,48 @@ void app_main(void)
 
 static void main_Task(void *pvParameters)
 {
-
+    uint8_t cmd_buf[CFG_TUD_CDC_RX_BUFSIZE * 2];
+    uint8_t cnt = 0;
+    uint8_t crc = 0;
 
     for(;;)
     {
+        if (xQueueReceive(queue_serial_RX, &cmd_buf[cnt], portMAX_DELAY) != pdPASS) continue;
+        if(cnt % (CFG_TUD_CDC_RX_BUFSIZE * 2))
+        {
+            cnt += CFG_TUD_CDC_RX_BUFSIZE;
+        }else{
+            cnt = 0;
+        }
+
+        for(uint8_t i = 0; i < 128; i++ )
+        {
+            if( (cmd_buf[i] == 0xAA) && (cmd_buf[i + 1] == 0x55))
+            {
+                crc = 0xFF^cmd_buf[i + 2]^cmd_buf[i + 3];
+                if(crc == cmd_buf[i + 6])
+                {
+                    switch (cmd_buf[i + 3])
+                    {
+                    case WEB_FACE:
+                        ESP_LOGI(TAG, "APP TO: WEB_FACE");
+                        break;
+                    
+                    case LOGGER:
+                        ESP_LOGI(TAG, "APP TO: LOGGER");
+                        break;
+
+                    case BRIDGE:
+                        ESP_LOGI(TAG, "APP TO: BRIDGE");
+                        break;
+                    
+                    default:
+                        break;
+                    }
+
+                }
+            } 
+        }
 
         vTaskDelay(pdMS_TO_TICKS(100));
 

@@ -472,7 +472,7 @@ static void logger_proc_task(void *pvParameters)
     {
         if( ((uint32_t)(esp_timer_get_time() / 1000) - now_ms) > 500)
         {
-            time_calculate_DEBUG(&RingBuffModulData);
+            //time_calculate_DEBUG(&RingBuffModulData);
             now_ms = (uint32_t)(esp_timer_get_time() / 1000); 
         }
         if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) == pdTRUE)

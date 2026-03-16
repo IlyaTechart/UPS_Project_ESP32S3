@@ -17,13 +17,19 @@
 #include "freertos/task.h"
 #include "freertos/ringbuf.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include "esp_timer.h"
 #include "util.h"
 #include "debug_probe.h"
 
 #define USB_SEND_RINGBUFFER_SIZE (2 * 1024)
+#define CDC_CMD_COMAND_SIZE 8
 
 static const char *TAG = "serial_bridge";
+static uint8_t cmd_buf[8];
+static uint8_t cmd_buf_pos = 0;
+
+QueueHandle_t queue_serial_RX;
 
 static RingbufHandle_t usb_sendbuf;
 static SemaphoreHandle_t usb_tx_requested = NULL;
@@ -107,17 +113,29 @@ void tud_cdc_tx_complete_cb(const uint8_t itf)
 
 void tud_cdc_rx_cb(const uint8_t itf)
 {
+    BaseType_t woken = pdFALSE;
     uint8_t buf[CFG_TUD_CDC_RX_BUFSIZE];
 
     const uint32_t rx_size = tud_cdc_n_read(itf, buf, CFG_TUD_CDC_RX_BUFSIZE);
+    ESP_LOGI(TAG, "Total RX CDC USB Byte: %d", rx_size);
     if (rx_size > 0) {
         ESP_LOGD(TAG, "USB CDC -> Transport (%" PRIu32 " bytes)", rx_size);
         ESP_LOG_BUFFER_HEXDUMP("USB CDC -> Transport", buf, rx_size, ESP_LOG_DEBUG);  // <<-- Работаем в этом месте 
 
-        
+        if(rx_size != CDC_CMD_COMAND_SIZE){
+            // Send to transport (could be UART, SPI, I2C, etc.)
+            serial_handler_send_data(buf, rx_size);
+        }else{
+            for(uint8_t i = 0; i < CFG_TUD_CDC_RX_BUFSIZE; i++)
+            {
+                if( buf[i] == 0xAA )
+                {
+                    xQueueSend(queue_serial_RX, buf, 0);
+                }
+            }
 
-        // Send to transport (could be UART, SPI, I2C, etc.)
-        serial_handler_send_data(buf, rx_size);
+        }
+        
     } else {
         ESP_LOGW(TAG, "tud_cdc_rx_cb receive error");
     }
@@ -222,6 +240,8 @@ esp_err_t serial_bridge_init(void)
 
     // Start USB sender task
     xTaskCreate(usb_sender_task, "usb_sender_task", 4 * 1024, NULL, SERIAL_HANDLER_TASK_PRI, NULL);
+
+    queue_serial_RX = xQueueCreate(4, CDC_CMD_COMAND_SIZE );
 
     ESP_LOGI(TAG, "Serial bridge initialized");
     return ESP_OK;
