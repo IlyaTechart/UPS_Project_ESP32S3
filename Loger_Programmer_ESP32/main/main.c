@@ -28,6 +28,7 @@
 #include "spi_handler_v2.h"
 #include "logger_handler.h"
 #include "main.h"
+#include "functional_manager.h"
 //#include "esp_app_trace.h"
 
 
@@ -48,10 +49,6 @@
 #endif
 
 static const char *TAG = "bridge_main";
-
-DeviceFuncState_t DeviceFuncState = WEB_FACE;
-RX_USB_data_state_t RX_USB_data_state = Rx_DATA_NOP;
-extern QueueHandle_t queue_serial_RX;
 
 
 #if ENABLE_ESP_BRIDGE
@@ -111,8 +108,6 @@ static uint8_t const desc_configuration[] = {
 #define MAC_BYTES       6
 
 static char serial_descriptor[MAC_BYTES * 2 + 1] = {'\0'}; // 2 chars per hexnumber + '\0'
-
-static void main_Task(void *pvParameters);
 
 static char const *string_desc_arr[] = {
     (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
@@ -325,62 +320,11 @@ void app_main(void)
 
     #endif
 
-    xTaskReturned = xTaskCreatePinnedToCore( main_Task, "Main Taks", 4 * 1024, NULL, 8, NULL, 0);
-    if(xTaskReturned != pdPASS)
-    {
-        ESP_LOGE(TAG, "IS NOT CREATED: Main Taks");
-    }
+    Function_Init();
 
     ESP_LOGI(TAG, "Program out of the MAIN_app");
 
 }
 
-static void main_Task(void *pvParameters)
-{
-    uint8_t cmd_buf[CFG_TUD_CDC_RX_BUFSIZE * 2];
-    uint8_t cnt = 0;
-    uint8_t crc = 0;
 
-    for(;;)
-    {
-        if (xQueueReceive(queue_serial_RX, &cmd_buf[cnt], portMAX_DELAY) != pdPASS) continue;
-        if(cnt % (CFG_TUD_CDC_RX_BUFSIZE * 2))
-        {
-            cnt += CFG_TUD_CDC_RX_BUFSIZE;
-        }else{
-            cnt = 0;
-        }
 
-        for(uint8_t i = 0; i < 128; i++ )
-        {
-            if( (cmd_buf[i] == 0xAA) && (cmd_buf[i + 1] == 0x55))
-            {
-                crc = 0xFF^cmd_buf[i + 2]^cmd_buf[i + 3];
-                if(crc == cmd_buf[i + 6])
-                {
-                    switch (cmd_buf[i + 3])
-                    {
-                    case WEB_FACE:
-                        ESP_LOGI(TAG, "APP TO: WEB_FACE");
-                        break;
-                    
-                    case LOGGER:
-                        ESP_LOGI(TAG, "APP TO: LOGGER");
-                        break;
-
-                    case BRIDGE:
-                        ESP_LOGI(TAG, "APP TO: BRIDGE");
-                        break;
-                    
-                    default:
-                        break;
-                    }
-
-                }
-            } 
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(100));
-
-    }
-}

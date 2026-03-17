@@ -92,4 +92,5 @@ extern volatile ModulData_t ModulData;
  * Вызывать один раз из app_main().
  */
 void spi_slave_init(void);
-void spi_slave_deinet(void);
+void spi_slave_suspend(void);
+void spi_slave_resume(void);

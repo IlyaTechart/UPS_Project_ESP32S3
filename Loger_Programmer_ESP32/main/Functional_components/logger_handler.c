@@ -77,48 +77,20 @@ void logger_Inint(void)
     
 }
 
-void logger_DeInint(void)
+void logger_suspend(void)
 {
-    /* Шаг 1: удалить задачу.
-     * Задача периодически берёт bufferMutex на короткое время (~1 мс).
-     * vTaskDelete безопасен для заблокированных задач — FreeRTOS очищает ресурсы
-     * в idle-задаче. Пауза 10 мс даёт задаче завершить текущую итерацию и
-     * отпустить мьютекс до его удаления. */
     if (TaskHeandler_Logger != NULL) {
-        vTaskDelete(TaskHeandler_Logger);
-        TaskHeandler_Logger = NULL;
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskSuspend(TaskHeandler_Logger);
     }
+    ESP_LOGI(TAG, "Logger task suspended");
+}
 
-    /* Шаг 2: удалить мьютекс */
-    if (bufferMutex != NULL) {
-        vSemaphoreDelete(bufferMutex);
-        bufferMutex = NULL;
+void logger_resume(void)
+{
+    if (TaskHeandler_Logger != NULL) {
+        vTaskResume(TaskHeandler_Logger);
     }
-
-    /* Шаг 3: освободить PSRAM-буфер */
-    if (RingBuffModulData.buffer != NULL) {
-        heap_caps_free(RingBuffModulData.buffer);
-        RingBuffModulData.buffer = NULL;
-    }
-
-    /* Шаг 4: сбросить все поля RingBuffModulData.
-     * FPGA_mov_averge — аккумулятор скользящего среднего — должен быть обнулён,
-     * иначе при повторном logger_Inint() среднее будет считаться по мусорным данным. */
-    RingBuffModulData.head      = 0;
-    RingBuffModulData.tail      = 0;
-    RingBuffModulData.count     = 0;
-    RingBuffModulData.size_byte = 0;
-    RingBuffModulData.cnt_cpyes = 0;
-    RingBuffModulData.cell_size = 0;
-    RingBuffModulData.is_full   = false;
-    memset((void *)&RingBuffModulData.FPGA_mov_averge, 0, sizeof(RingBuffModulData.FPGA_mov_averge));
-
-    /* Шаг 5: обнулить глобальные средние значения и статус буфера */
-    memset(&gFpgaAvrData, 0, sizeof(gFpgaAvrData));
-    RingBuffStatus = RINGBUF_OK;
-
-    ESP_LOGI(TAG, "Logger DeInit done");
+    ESP_LOGI(TAG, "Logger task resumed");
 }
 
 // Функция возвращает текущее количество данных в буфере

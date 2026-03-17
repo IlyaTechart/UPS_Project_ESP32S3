@@ -28,6 +28,11 @@ static const char *TAG = "WEB_CTRL";
 static int s_retry_num = 0;
 static int s_led_state = 0;
 
+static httpd_handle_t              s_server           = NULL;
+static esp_netif_t                *s_sta_netif         = NULL;
+static esp_event_handler_instance_t s_instance_any_id = NULL;
+static esp_event_handler_instance_t s_instance_got_ip = NULL;
+
 // Глобальные данные для WEB (ModulData объявлен в spi_handler_v2.h при CONFIG_SPI_SLAVE_SPI2_ENABLED или CONFIG_SPI_SLAVE_SPI3_ENABLED)
 #if CONFIG_SPI_SLAVE_SPI2_ENABLED || CONFIG_SPI_SLAVE_SPI3_ENABLED
 extern volatile ModulData_t ModulData;
@@ -403,22 +408,22 @@ void wifi_web_init(void)
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
+    s_sta_netif = esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL, &instance_any_id));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL, &instance_got_ip));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                                        &event_handler, NULL, &s_instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                                        &event_handler, NULL, &s_instance_got_ip));
 
     wifi_config_t wifi_config = {
         .sta = {
@@ -430,6 +435,107 @@ void wifi_web_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
-    
-    start_webserver();
+
+    s_server = start_webserver();
+    if (s_server == NULL) {
+        ESP_LOGE(TAG, "Failed to start web server");
+    }
+
+    s_retry_num = 0;
+    ESP_LOGI(TAG, "wifi_web_init done");
+}
+
+void wifi_web_suspend(void)
+{
+    /* Остановить HTTP сервер первым — прекращаем принимать запросы */
+    if (s_server != NULL) {
+        esp_err_t err = httpd_stop(s_server);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "httpd_stop failed: %s", esp_err_to_name(err));
+        }
+        s_server = NULL;
+    }
+
+    /* Отключиться от AP и остановить WiFi.
+     * Драйвер, netif и event loop остаются инициализированными — память не освобождаем,
+     * чтобы на resume не было повторного malloc и фрагментации кучи. */
+    esp_wifi_disconnect();
+    esp_err_t err = esp_wifi_stop();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_stop failed: %s", esp_err_to_name(err));
+    }
+
+    s_retry_num = 0;
+    ESP_LOGI(TAG, "WiFi suspended");
+}
+
+void wifi_web_resume(void)
+{
+    /* Запустить WiFi (драйвер и netif уже инициализированы в wifi_web_init) */
+    esp_err_t err = esp_wifi_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_start failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    /* Поднять HTTP сервер */
+    s_server = start_webserver();
+    if (s_server == NULL) {
+        ESP_LOGE(TAG, "Failed to start web server on resume");
+    }
+
+    s_retry_num = 0;
+    ESP_LOGI(TAG, "WiFi resumed");
+}
+
+void wifi_web_Deinit(void)
+{
+    /* Шаг 1: остановить HTTP сервер */
+    if (s_server != NULL) {
+        esp_err_t err = httpd_stop(s_server);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "httpd_stop failed: %s", esp_err_to_name(err));
+        }
+        s_server = NULL;
+    }
+
+    esp_wifi_disconnect();
+    esp_err_t err = esp_wifi_stop();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_stop failed: %s", esp_err_to_name(err));
+    }
+
+    if (s_instance_any_id != NULL) {
+        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, s_instance_any_id);
+        s_instance_any_id = NULL;
+    }
+    if (s_instance_got_ip != NULL) {
+        esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, s_instance_got_ip);
+        s_instance_got_ip = NULL;
+    }
+
+    err = esp_wifi_deinit();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_deinit failed: %s", esp_err_to_name(err));
+    }
+
+    if (s_sta_netif != NULL) {
+        esp_netif_destroy(s_sta_netif);
+        s_sta_netif = NULL;
+    }
+
+    err = esp_event_loop_delete_default();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_event_loop_delete_default failed: %s", esp_err_to_name(err));
+    }
+
+    err = esp_netif_deinit();
+    if (err != ESP_OK && err != ESP_ERR_NOT_SUPPORTED) {
+        ESP_LOGE(TAG, "esp_netif_deinit failed: %s", esp_err_to_name(err));
+    }
+
+    s_retry_num = 0;
+    s_led_state = 0;
+
+    ESP_LOGI(TAG, "wifi_web_Deinit done");
 }

@@ -602,117 +602,44 @@ static uint32_t spi_slave_crc32(const void *data, size_t len)
     return ~crc;
 }
 
-void spi_slave_deinet(void)
+void spi_slave_suspend(void)
 {
-    /* Шаг 1: удалить задачи.
-     * vTaskDelete безопасен для заблокированных задач — FreeRTOS освобождает их
-     * ресурсы в idle-задаче. Удаляем до освобождения драйвера, чтобы задачи не
-     * успели запустить новую транзакцию после вызова spi_slave_free(). */
 #if CONFIG_SPI_SLAVE_SPI2_ENABLED
     if (TaskHandleDriver_spi2 != NULL) {
-        vTaskDelete(TaskHandleDriver_spi2);
-        TaskHandleDriver_spi2 = NULL;
+        vTaskSuspend(TaskHandleDriver_spi2);
     }
 #endif
 
 #if CONFIG_SPI_SLAVE_SPI3_ENABLED
     if (TaskHandleDriver_spi3 != NULL) {
-        vTaskDelete(TaskHandleDriver_spi3);
-        TaskHandleDriver_spi3 = NULL;
+        vTaskSuspend(TaskHandleDriver_spi3);
     }
 #endif
 
     if (TaskHandle_Proc != NULL) {
-        vTaskDelete(TaskHandle_Proc);
-        TaskHandle_Proc = NULL;
+        vTaskSuspend(TaskHandle_Proc);
     }
 
-    /* Дать idle-задаче время почистить удалённые задачи */
-    vTaskDelay(pdMS_TO_TICKS(50));
+    ESP_LOGI(TAG, "SPI Slave tasks suspended");
+}
 
-    /* Шаг 2: освободить SPI-драйвер.
-     * spi_slave_free() отменяет ожидающие транзакции и освобождает все ресурсы
-     * драйвера включая шину (внутри вызывает spi_bus_free). */
+void spi_slave_resume(void)
+{
 #if CONFIG_SPI_SLAVE_SPI2_ENABLED
-    esp_err_t ret2 = spi_slave_free(SPI2_HOST);
-    if (ret2 != ESP_OK) {
-        ESP_LOGE(TAG, "spi_slave_free(SPI2) failed: %s", esp_err_to_name(ret2));
-    } else {
-        ESP_LOGI(TAG, "SPI2 driver freed");
+    if (TaskHandleDriver_spi2 != NULL) {
+        vTaskResume(TaskHandleDriver_spi2);
     }
 #endif
 
 #if CONFIG_SPI_SLAVE_SPI3_ENABLED
-    esp_err_t ret3 = spi_slave_free(SPI3_HOST);
-    if (ret3 != ESP_OK) {
-        ESP_LOGE(TAG, "spi_slave_free(SPI3) failed: %s", esp_err_to_name(ret3));
-    } else {
-        ESP_LOGI(TAG, "SPI3 driver freed");
+    if (TaskHandleDriver_spi3 != NULL) {
+        vTaskResume(TaskHandleDriver_spi3);
     }
 #endif
 
-    /* Шаг 3: удалить очереди.
-     * Queue set удаляем ПЕРВЫМ, потому что он ссылается на дочерние очереди.
-     */
-#if CONFIG_SPI_SLAVE_SPI3_ENABLED
-    if (s_spi_evt_queue_set != NULL) {
-        vQueueDelete(s_spi_evt_queue_set);
-        s_spi_evt_queue_set = NULL;
+    if (TaskHandle_Proc != NULL) {
+        vTaskResume(TaskHandle_Proc);
     }
-    if (s_spi3_evt_queue != NULL) {
-        vQueueDelete(s_spi3_evt_queue);
-        s_spi3_evt_queue = NULL;
-    }
-#endif
 
-#if CONFIG_SPI_SLAVE_SPI2_ENABLED
-    if (s_spi2_evt_queue != NULL) {
-        vQueueDelete(s_spi2_evt_queue);
-        s_spi2_evt_queue = NULL;
-    }
-#endif
-
-    /* Шаг 4: удалить семафоры */
-#if CONFIG_SPI_SLAVE_SPI2_ENABLED
-    if (s_spi2_driver_sem != NULL) {
-        vSemaphoreDelete(s_spi2_driver_sem);
-        s_spi2_driver_sem = NULL;
-    }
-#endif
-
-#if CONFIG_SPI_SLAVE_SPI3_ENABLED
-    if (s_spi3_driver_sem != NULL) {
-        vSemaphoreDelete(s_spi3_driver_sem);
-        s_spi3_driver_sem = NULL;
-    }
-#endif
-
-    /* Шаг 5: освободить DMA-буферы.
-     * Буферы выделялись через spi_bus_dma_memory_alloc() с флагом MALLOC_CAP_DMA,
-     * освобождаются через heap_caps_free() (не обычный free()). */
-#if CONFIG_SPI_SLAVE_SPI2_ENABLED
-    if (s_spi2_buffers.rx_buffer != NULL) {
-        heap_caps_free(s_spi2_buffers.rx_buffer);
-        s_spi2_buffers.rx_buffer = NULL;
-    }
-    if (s_spi2_buffers.tx_buffer != NULL) {
-        heap_caps_free(s_spi2_buffers.tx_buffer);
-        s_spi2_buffers.tx_buffer = NULL;
-    }
-    ESP_LOGI(TAG, "SPI2 DMA buffers freed");
-#endif
-
-#if CONFIG_SPI_SLAVE_SPI3_ENABLED
-    if (s_spi3_buffers.rx_buffer != NULL) {
-        heap_caps_free(s_spi3_buffers.rx_buffer);
-        s_spi3_buffers.rx_buffer = NULL;
-    }
-    if (s_spi3_buffers.tx_buffer != NULL) {
-        heap_caps_free(s_spi3_buffers.tx_buffer);
-        s_spi3_buffers.tx_buffer = NULL;
-    }
-    ESP_LOGI(TAG, "SPI3 DMA buffers freed");
-#endif
-
-    ESP_LOGI(TAG, "SPI Slave deinit done");
+    ESP_LOGI(TAG, "SPI Slave tasks resumed");
 }
