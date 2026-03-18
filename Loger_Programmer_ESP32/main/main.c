@@ -51,7 +51,7 @@
 static const char *TAG = "bridge_main";
 
 
-#if ENABLE_ESP_BRIDGE
+
 
 #define TUSB_DESC_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_VENDOR_DESC_LEN + TUD_MSC_DESC_LEN)
 
@@ -239,7 +239,6 @@ static void serial_rx_activity_callback(bool active)
     gpio_set_level(LED_TX, active ? LED_TX_ON : LED_TX_OFF);
 }
 
-#endif
 
 static void init_led_gpios(void)
 {
@@ -259,7 +258,7 @@ static void init_led_gpios(void)
     ESP_LOGI(TAG, "LED GPIO init done");
 }
 
-#if ENABLE_ESP_BRIDGE
+
 
 static void int_usb_phy(void)
 {
@@ -274,7 +273,7 @@ static void int_usb_phy(void)
     usb_phy_handle_t phy_handle;
     usb_new_phy(&phy_config, &phy_handle);
 }
-#endif
+
 
 void app_main(void)
 {
@@ -283,17 +282,15 @@ void app_main(void)
 
     init_led_gpios(); // Keep this at the beginning. LEDs are used for error reporting.
 
-    #if ENABLE_ESP_BRIDGE
-
     init_serial_no();
 
     int_usb_phy();
 
-    ESP_ERROR_CHECK(serial_handler_init(TRANSPORT_TYPE_UART));
+    ESP_ERROR_CHECK(serial_handler_init(TRANSPORT_TYPE_UART));                      // Здесь есть выеление памяти под задачу
     serial_handler_register_tx_activity_callback(serial_tx_activity_callback);
     serial_handler_register_rx_activity_callback(serial_rx_activity_callback);
 
-    ESP_ERROR_CHECK(serial_bridge_init());
+    ESP_ERROR_CHECK(serial_bridge_init());                                          // Здесь есть выеление памяти под задачу
 
     tusb_init();
     msc_init();
@@ -304,21 +301,11 @@ void app_main(void)
         ESP_LOGE(TAG, "IS NOT CREATED: tusb_device_task");
     }
 
-    #endif
-
-    #if ENABLE_WEB_INTERFACE
-
     wifi_web_init();
-
-    #endif
-
-    #if ENABLE_LOGGER
 
     spi_slave_init();
 
     logger_Inint();
-
-    #endif
 
     Function_Init();
 

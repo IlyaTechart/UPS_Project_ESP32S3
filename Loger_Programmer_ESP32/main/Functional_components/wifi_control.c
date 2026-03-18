@@ -448,13 +448,13 @@ void wifi_web_init(void)
 void wifi_web_suspend(void)
 {
     /* Остановить HTTP сервер первым — прекращаем принимать запросы */
-    if (s_server != NULL) {
-        esp_err_t err = httpd_stop(s_server);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "httpd_stop failed: %s", esp_err_to_name(err));
-        }
-        s_server = NULL;
-    }
+    // if (s_server != NULL) {
+    //     esp_err_t err = httpd_stop(s_server);
+    //     if (err != ESP_OK) {
+    //         ESP_LOGE(TAG, "httpd_stop failed: %s", esp_err_to_name(err));
+    //     }
+    //     s_server = NULL;
+    // }
 
     /* Отключиться от AP и остановить WiFi.
      * Драйвер, netif и event loop остаются инициализированными — память не освобождаем,
@@ -479,10 +479,10 @@ void wifi_web_resume(void)
     }
 
     /* Поднять HTTP сервер */
-    s_server = start_webserver();
-    if (s_server == NULL) {
-        ESP_LOGE(TAG, "Failed to start web server on resume");
-    }
+    // s_server = start_webserver();
+    // if (s_server == NULL) {
+    //     ESP_LOGE(TAG, "Failed to start web server on resume");
+    // }
 
     s_retry_num = 0;
     ESP_LOGI(TAG, "WiFi resumed");

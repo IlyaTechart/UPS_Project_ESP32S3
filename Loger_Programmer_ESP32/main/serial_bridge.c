@@ -23,7 +23,6 @@
 #include "debug_probe.h"
 
 #define USB_SEND_RINGBUFFER_SIZE (2 * 1024)
-#define CDC_CMD_COMAND_SIZE 8
 
 static const char *TAG = "serial_bridge";
 static uint8_t cmd_buf[8];
@@ -130,7 +129,8 @@ void tud_cdc_rx_cb(const uint8_t itf)
             {
                 if( buf[i] == 0xAA )
                 {
-                    xQueueSend(queue_serial_RX, buf, 0);
+                    if(i < (CFG_TUD_CDC_RX_BUFSIZE - CDC_CMD_COMAND_SIZE) ) xQueueSend(queue_serial_RX, buf + i, 0);
+                    break;
                 }
             }
 
