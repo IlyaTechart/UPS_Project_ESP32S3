@@ -3,7 +3,7 @@
 
 
 // Текущее состояние — какие компоненты сейчас живые
-static ComponentMask_t g_initialized = COMP_NONE;
+ComponentMask_t g_initialized = COMP_NONE;
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 // Что нужно для каждого режима
@@ -31,8 +31,8 @@ void Function_Init(void)
         ESP_LOGE(TAG, "IS NOT CREATED: Main Taks");
     }
 
-    Func_manege(RESET_LOGGER);                       // Начальное функциональное состояние устройства 
-    Func_manege(RESET_WEB);
+    //Func_manege(RESET_LOGGER);                       // Начальное функциональное состояние устройства 
+    //Func_manege(RESET_WEB);
 
     COMP_SET(COMP_TUSB);
 
@@ -74,7 +74,7 @@ static void Func_manege(SetCommand_t STATE)
     {
     case SET_BRIDGE:
 
-        if (!COMP_IS_INIT(MODE_REQUIRES[BRIDGE]))
+        if (!COMP_IS_GO(MODE_REQUIRES[BRIDGE]))
         {
             //TODO: bridge init
             COMP_SET(COMP_TUSB | COMP_BRIDGE | COMP_MSC | COMP_DEBUG_PROB);
@@ -88,7 +88,7 @@ static void Func_manege(SetCommand_t STATE)
 
     case SET_LOGGER:
 
-        if (!COMP_IS_INIT(MODE_REQUIRES[LOGGER]))
+        if (!COMP_IS_GO(MODE_REQUIRES[LOGGER]))
         {
             /* Задачи уже созданы, просто возобновляем */
             spi_slave_resume();
@@ -104,7 +104,7 @@ static void Func_manege(SetCommand_t STATE)
 
     case SET_WEB:
 
-        if (!COMP_IS_INIT(MODE_REQUIRES[WEB_FACE]))
+        if (!COMP_IS_GO(MODE_REQUIRES[WEB_FACE]))
         {
             /* WiFi-драйвер и netif уже живые, только стартуем WiFi и HTTP */
             wifi_web_resume();
@@ -119,7 +119,7 @@ static void Func_manege(SetCommand_t STATE)
 
     case RESET_BRIDGE:
 
-        if (COMP_IS_INIT(MODE_REQUIRES[BRIDGE]))
+        if (COMP_IS_GO(MODE_REQUIRES[BRIDGE]))
         {
             //TODO: bridge suspend
             COMP_CLEAR(COMP_BRIDGE | COMP_MSC | COMP_DEBUG_PROB);
@@ -133,7 +133,7 @@ static void Func_manege(SetCommand_t STATE)
 
     case RESET_LOGGER:
 
-        if (COMP_IS_INIT(MODE_REQUIRES[LOGGER]))
+        if (COMP_IS_GO(MODE_REQUIRES[LOGGER]))
         {
             /* Приостанавливаем задачи, память остаётся — без фрагментации */
             spi_slave_suspend();
@@ -150,7 +150,7 @@ static void Func_manege(SetCommand_t STATE)
 
     case RESET_WEB:
 
-        if (COMP_IS_INIT(MODE_REQUIRES[WEB_FACE]))
+        if (COMP_IS_GO(MODE_REQUIRES[WEB_FACE]))
         {
             /* Останавливаем WiFi и HTTP, драйвер и netif остаются в памяти */
             wifi_web_suspend();

@@ -1,0 +1,74 @@
+ESP32S3 - коричневая макетка
+
+(Выведенные пины) (Пины EPS32S3 target)
+1- GND
+2-GPIO4(TMS)
+3-GPIO5(TDO)
+4-GPIO6(TCK)
+5-GPIO7(TDI)
+6-
+
+7- GND
+8-
+9-
+10-
+11-
+12-
+13-
+14-
+15-
+
+================================================================================
+ТАБЛИЦА ПИНОВ (ESP32-S3 DEV BOARD)
+================================================================================
+GPIO Пин | Заводские функции (из схемы)            | Моё назначение
+---------|-----------------------------------------|----------------------------
+ЛЕВАЯ СТОРОНА (СВЕРХУ ВНИЗ)
+---------|-----------------------------------------|----------------------------
+3V3      | Питание 3.3В                            | [ПИТАНИЕ]
+RST      | Reset (Сброс)                           | [КНОПКА СБРОСА]
+GPIO4    | ADC1_CH3, CAM_SIOD, T4                  | TMS_FPGA
+GPIO5    | ADC1_CH4, CAM_SIOC, T5                  | TDO_FPGA
+GPIO6    | ADC1_CH5, CAM_VYSNC, T6                 | TCK_FPGA
+GPIO7    | ADC1_CH6, CAM_HREF, T7                  | TDI_FPGA
+GPIO15   | ADC2_CH4, CAM_XCLK, U0RTS               | 
+GPIO16   | ADC2_CH5, CAM_Y9, U0CTS                 | 
+GPIO17   | ADC2_CH6, CAM_Y8, U1TXD                 | U1TXD_FPGA
+GPIO18   | ADC2_CH7, CAM_Y7, U1RXD                 | U1RXD_FPGA
+GPIO8    | ADC1_CH7, CAM_Y4, T8                    | 
+GPIO3    | ADC1_CH2, JTAG EN, T3                   | JTAG EN
+GPIO46   | LOG (System Log)                        | 
+GPIO9    | ADC1_CH8, CAM_Y3, T9                    | SPI_SLAVE_SPI3_GPIO_SCLK 
+GPIO10   | ADC1_CH9, CAM_Y5, T10                   | SPI_SLAVE_SPI2_GPIO_CS
+GPIO11   | ADC2_CH0, CAM_Y2, T11                   | SPI_SLAVE_SPI2_GPIO_MOSI 
+GPIO12   | ADC2_CH1, CAM_Y6, T12                   | SPI_SLAVE_SPI2_GPIO_SCLK
+GPIO13   | ADC2_CH2, CAM_PCLK, T13                 | SPI_SLAVE_SPI2_GPIO_MISO
+GPIO14   | ADC2_CH3, T14                           | SPI_SLAVE_SPI3_GPIO_CS
+5V       | Питание 5В                              | [ПИТАНИЕ]
+
+---------|-----------------------------------------|----------------------------
+ПРАВАЯ СТОРОНА (СВЕРХУ ВНИЗ)
+---------|-----------------------------------------|----------------------------
+GPIO43   | U0TXD, LED TX                           | U0TXD
+GPIO44   | U0RXD, LED RX                           | U0RXD
+GPIO1    | ADC1_CH0, T1                            | 
+GPIO2    | ADC1_CH1, LED ON, T2                    | 
+GPIO42   | MTMS                                    | <-MTMS
+GPIO41   | MTDI                                    | <-MTDI
+GPIO40   | SD_DATA, MTDO                           | <-MTDO
+GPIO39   | SD_CLK, MTCK                            | <-MTCK
+GPIO38   | SD_CMD                                  | SPI_SLAVE_SPI3_GPIO_MISO
+GPIO37   | PSRAM                                   | PSRAM
+GPIO36   | PSRAM                                   | PSRAM
+GPIO35   | PSRAM                                   | PSRAM
+GPIO0    | Boot (Загрузка)                         | Boot
+GPIO45   | VSPI                                    | 
+GPIO48   | WS2812 (Адресный светодиод на плате)    | WS2812
+GPIO47   | GPIO                                    | 
+GPIO21   | GPIO                                    | SPI_SLAVE_SPI3_GPIO_MOSI
+GPIO20   | USB_D-, ADC2_CH9, U1CTS                 | USB_D-
+GPIO19   | USB_D+, ADC2_CH8, U1RTS                 | USB_D+
+GND      | Ground (Земля)                          | [ЗЕМЛЯ]
+================================================================================
+
+

@@ -24,20 +24,20 @@ void SetVelueInStruckt(ModulData_t *ups_data)
 
 
 	// Генерируем входные значения
-	ups_data->packet.input.v_in_AB = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.input.v_in_BC = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.input.v_in_CA = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.input.v_bypass_A = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.input.v_bypass_B = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.input.v_bypass_C = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.input.i_in_A = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.input.i_in_B = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.input.i_in_C = 380 + ((float)(rand() % 20) / 10.0);
+	ups_data->packet.input.v_in_AB = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.input.v_in_BC = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.input.v_in_CA = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.input.v_bypass_A = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.input.v_bypass_B = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.input.v_bypass_C = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.input.i_in_A = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.input.i_in_B = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.input.i_in_C = 380 + ((float)(rand() % 10) / 10.0);
 
 	// Генерируем выходные значения
-	ups_data->packet.output.v_out_A = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.output.v_out_B = 380 + ((float)(rand() % 20) / 10.0);
-	ups_data->packet.output.v_out_C = 380 + ((float)(rand() % 20) / 10.0);
+	ups_data->packet.output.v_out_A = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.output.v_out_B = 380 + ((float)(rand() % 10) / 10.0);
+	ups_data->packet.output.v_out_C = 380 + ((float)(rand() % 10) / 10.0);
 	ups_data->packet.output.freq_out = 50 + ((float)(rand() % 3));
 	ups_data->packet.output.i_out_A = 10 + (float)(rand() % 2);
 	ups_data->packet.output.i_out_B = 10 + (float)(rand() % 2);
@@ -56,7 +56,7 @@ void SetVelueInStruckt(ModulData_t *ups_data)
 	// Генерация параметров АКБ
 	ups_data->packet.battery.bat_voltage = 120 + (float)(rand() % 5);
 	ups_data->packet.battery.bat_capacity = 80 + (float)(rand() % 5);
-	ups_data->packet.battery.bat_groups_count = 1000 + (float)(rand() % 100);
+	ups_data->packet.battery.bat_groups_count = 1000 + (float)(rand() % 10);
 	ups_data->packet.battery.dc_bus_voltage = 120 + (float)(rand() % 5);
 	ups_data->packet.battery.bat_current = 10 + (float)(rand() % 5);
 	ups_data->packet.battery.backup_time = 10 + (float)(rand() % 30);

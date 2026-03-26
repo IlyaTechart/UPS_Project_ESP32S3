@@ -21,7 +21,7 @@ static const char *TAG_RMS = "LOG_AVG";
 // Переменная кольцевого буфера 
 RingBuffModulData_t RingBuffModulData;
 
-static SemaphoreHandle_t bufferMutex = NULL; // Мутекс для защиты памяти
+SemaphoreHandle_t bufferMutex = NULL; // Мутекс для защиты памяти
 
 //Состояние кольцевого буфера
 RingBuffStatus_t RingBuffStatus = RINGBUF_OK;
@@ -35,12 +35,16 @@ FpgaRmsData_t gFpgaAvrData;
 // Хендел задачи логера 
 static TaskHandle_t TaskHeandler_Logger;
 
-static size_t get_elements_count(RingBuffModulData_t *rb);
+// Хендел задачи дампа 
+extern TaskHandle_t DumpTask_Handler;
+
+
 void add_sample_in_average(ModulData_t* ModulData);
 void sub_sample_from_average(ModulData_t* ModulData);
 static void calculate_moving_average_from_buffer(void);
 static void logger_print_avg_data(const FpgaRmsData_t *avg);
 static void print_error_flag_frame(RingBuffModulData_t *RingBuffModulData, UpsRegisterFlags_t *UpsRegisterFlags);
+static void dump_ringbuf_to_usb_cdc(RingBuffModulData_t *rb);
 void time_calculate_DEBUG(RingBuffModulData_t *RingBuffModulData);
 static void logger_proc_task(void *pvParameters);
 
@@ -64,7 +68,7 @@ void logger_Inint(void)
     RingBuffModulData.count = 0;
     RingBuffModulData.is_full = false;
 
-    if (xTaskCreate(logger_proc_task, "logger", 8192, NULL, 5, &TaskHeandler_Logger) != pdPASS) {        // Создаём задачу (стек 8KB — расчёт RMS + много ESP_LOGI)
+    if (xTaskCreatePinnedToCore(logger_proc_task, "logger", 8192, NULL, 5, &TaskHeandler_Logger, 1) != pdPASS) {        // Создаём задачу (стек 8KB — расчёт RMS + много ESP_LOGI)
         ESP_LOGE(TAG, "Failed to create LOGGER task");
     }else{
         ESP_LOGI(TAG, "Logger Init Success");
@@ -79,8 +83,26 @@ void logger_Inint(void)
 
 void logger_suspend(void)
 {
-    if (TaskHeandler_Logger != NULL) {
-        vTaskSuspend(TaskHeandler_Logger);
+    if (TaskHeandler_Logger != NULL)
+    {
+        /* Кооперативная остановка: посылаем уведомление и ждём пока
+         * задача сама себя остановит в безопасной точке (до мьютекса). */
+        xTaskNotifyGive(TaskHeandler_Logger);
+
+        uint32_t timeout = 500;
+        while (eTaskGetState(TaskHeandler_Logger) != eSuspended && timeout > 0)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            timeout -= 10;
+        }
+
+        if (eTaskGetState(TaskHeandler_Logger) != eSuspended)
+        {
+            /* Принудительная остановка как страховка (не должна срабатывать
+             * при нормальной работе — задача должна ответить за 500мс). */
+            vTaskSuspend(TaskHeandler_Logger);
+            ESP_LOGW(TAG, "Logger: forced suspend after timeout");
+        }
     }
     ESP_LOGI(TAG, "Logger task suspended");
 }
@@ -94,7 +116,7 @@ void logger_resume(void)
 }
 
 // Функция возвращает текущее количество данных в буфере
-static size_t get_elements_count(RingBuffModulData_t *rb) {
+size_t get_elements_count(RingBuffModulData_t *rb) {
     size_t capacity = rb->cnt_cpyes; // Общая вместимость буфера (максимальное кол-во элементов)
     
     if (rb->is_full) {
@@ -218,7 +240,7 @@ RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData)
             sub_sample_from_average(&RingBuffModulData.buffer[RingBuffModulData.tail]);
             add_sample_in_average(ModulData);
             memcpy(&RingBuffModulData.buffer[RingBuffModulData.tail], ModulData, sizeof(ModulData_t));
-            //Можно здесь отбрасывать приянтые данные, но щас релизована перезапись старых
+
             RingBuffModulData.tail = (RingBuffModulData.tail + 1) % RingBuffModulData.cnt_cpyes;
             RingBuffModulData.head = next_head;
             RingBuffModulData.is_full = true;
@@ -477,45 +499,63 @@ void time_calculate_DEBUG(RingBuffModulData_t *rb)
     FpgaToEspPacket_t* pkHead = &rb->buffer[last_written_idx].packet;
 
     // Вычитаем из НОВОГО времени СТАРОЕ (а не наоборот, чтобы не было переполнения uint32_t)
-    uint32_t deltaTime_ms = pkHead->system_time_ms - pkTail->system_time_ms; 
+    uint32_t deltaTime_ms = pkHead->system_time_ms - pkTail->system_time_ms;
+    uint32_t deltaTime_sec = deltaTime_ms / 1000; 
+    uint32_t deltaTime_min = deltaTime_sec / 60; 
     
     ESP_LOGI(TAG_TIME, "Delta: %u ms, Elements: %d, Buf_status: %s", (unsigned)deltaTime_ms, get_elements_count(rb), rb->is_full? "FULL" : "NOT FULL");
+    ESP_LOGI(TAG_TIME, "Delta Sec: %u sec, Minutes %u,%u min", (unsigned)deltaTime_sec, (unsigned)deltaTime_min, (unsigned)deltaTime_sec % 60 );
 }
 
 static void logger_proc_task(void *pvParameters)
 {
     uint64_t last_print_ms = 0;
-     uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000); 
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
 
     for(;;)
     {
-        if( ((uint32_t)(esp_timer_get_time() / 1000) - now_ms) > 500)
+        /* ── Безопасная точка остановки ──────────────────────────────────
+         * Мьютекс НЕ захвачен. Проверяем уведомление от logger_suspend().
+         * ulTaskNotifyTake(pdTRUE, 0) — неблокирующая проверка:
+         *   - если уведомление есть (> 0) → сбрасываем счётчик и засыпаем;
+         *   - если нет (== 0) → продолжаем работу.
+         * После vTaskResume() снаружи задача продолжит отсюда. */
+        if (ulTaskNotifyTake(pdTRUE, 0) > 0)
         {
-            //time_calculate_DEBUG(&RingBuffModulData);
-            now_ms = (uint32_t)(esp_timer_get_time() / 1000); 
+            ESP_LOGI(TAG, "Logger: suspending itself safely");
+            vTaskSuspend(NULL);
+            /* ── возобновление после vTaskResume() ── */
+            ESP_LOGI(TAG, "Logger: resumed");
         }
+
         if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) == pdTRUE)
         {
-            // Пересчитываем среднее по текущему окну скользящего среднего
             calculate_moving_average_from_buffer();
             xSemaphoreGive(bufferMutex);
-            // UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);                                    // <<-- !Проверка утечки стека 
+            // UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
             // ESP_LOGI(TAG, "logger stack free: %u bytes", (unsigned)(hwm * sizeof(StackType_t)));
+        } 
+
+        if(RingBuffModulData.buffer[RingBuffModulData.head - 1].packet.alarms.raw)
+        {
+            xTaskNotifyGive(DumpTask_Handler);
+            ESP_LOGI(TAG, "Send Task Notify");
         }
-        //print_error_flag_frame(&RingBuffModulData, &UpsRegisterFlags);
-        //ESP_LOGI(TAG, "Circular buf: tail: %u  head: %u flag: %u", RingBuffModulData.tail, RingBuffModulData.head, RingBuffModulData.is_full );
-        // Раз в 1 секунду выводим текущие RMS-значения
+        // Участок для логирования информации раз в 1 сек. 
+        /////////////////////////////////////////////////////////////////////////////////////////////
+        now_ms = (uint32_t)(esp_timer_get_time() / 1000);
         if (now_ms - last_print_ms >= 1000) {
             last_print_ms = now_ms;
-
-            // Делаем локальную копию, чтобы вывод не зависел от мьютекса
             FpgaRmsData_t snapshot;
             memcpy(&snapshot, &gFpgaAvrData, sizeof(snapshot));
+            time_calculate_DEBUG(&RingBuffModulData);
             //logger_print_avg_data(&snapshot);
-            //ESP_LOGI(TAG, "Current time: %u", now_ms);
         }
+        /////////////////////////////////////////////////////////////////////////////////////////////
 
-        vTaskDelay(pdMS_TO_TICKS(1));
+        // Если задача требует боольшого процессорного рвемя, то может сработать WDT и убить её, поскольку 
+        // в idl задачи не будет выделено время для сброса WDT 
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 

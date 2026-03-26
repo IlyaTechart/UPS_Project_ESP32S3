@@ -13,8 +13,8 @@
 extern "C" {
 #endif
 
-#define CDC_CMD_COMAND_SIZE 8
 
+#define CDC_CMD_COMAND_SIZE 8
 /**
  * @brief Initialize serial bridge
  *

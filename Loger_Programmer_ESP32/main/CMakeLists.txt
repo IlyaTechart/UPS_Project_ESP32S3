@@ -9,8 +9,8 @@ endif()
 
 idf_component_register(SRCS "Functional_components/functional_manager.c"
                             "Functional_components/logger_handler.c"
-                            "Functional_components/wifi_control.c" 
-                            "Functional_components/spi_handler_v2.c" 
+                            "Functional_components/spi_handler_v2.c"
+                            "Functional_components/wifi_control.c"
                             "main.c"
                             "msc.c"
                             "eub_vendord.c"
@@ -18,7 +18,7 @@ idf_component_register(SRCS "Functional_components/functional_manager.c"
                        REQUIRES ${dependencies}
                        PRIV_REQUIRES esp_wifi nvs_flash esp_http_server esp_netif esp_event json driver
                        LDFRAGMENTS "noflash.lf"
-                       INCLUDE_DIRS "." "Functional_components" "public_include")
+                       INCLUDE_DIRS "." "public_include" "Functional_components")
 
 idf_component_get_property(tusb_lib espressif__tinyusb COMPONENT_LIB)
 target_include_directories(${tusb_lib} PRIVATE public_include)

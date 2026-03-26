@@ -1,0 +1,133 @@
+Отлично, теперь разберём всё детально.
+
+---
+
+## Разбор `usb_sender_task`
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    АРХИТЕКТУРА ПОТОКА ДАННЫХ                 │
+│                                                             │
+│  UART/Target ──► transport_data_received_callback()         │
+│                          │                                  │
+│                          ▼                                  │
+│                   usb_sendbuf                               │
+│              (RingBuffer 2KB FreeRTOS)                      │
+│                          │                                  │
+│                          ▼                                  │
+│               usb_sender_task()                             │
+│                          │                                  │
+│                          ▼                                  │
+│              tud_cdc_write() → USB CDC → ПК                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Шаг 1 — читаем из кольцевого буфера:**
+
+```57:68:c:\Users\q\Desktop\ESP32\Bridge_NOT_original\esp-usb-bridge\main\serial_bridge.c
+static void usb_sender_task(void *pvParameters)
+{
+    while (1) {
+        size_t ringbuf_received;
+        uint8_t *buf = xRingbufferReceiveUpTo(usb_sendbuf, &ringbuf_received, pdMS_TO_TICKS(100),
+                                              CFG_TUD_CDC_TX_BUFSIZE);
+```
+
+`xRingbufferReceiveUpTo` — ждёт данные максимум 100мс. Возвращает указатель прямо **внутрь** кольцевого буфера (zero-copy). Размер порции ограничен `CFG_TUD_CDC_TX_BUFSIZE` (обычно 64 байта) — это размер одного USB пакета.
+
+**Шаг 2 — копируем и освобождаем буфер:**
+
+```70:73:c:\Users\q\Desktop\ESP32\Bridge_NOT_original\esp-usb-bridge\main\serial_bridge.c
+        if (buf) {
+            uint8_t int_buf[CFG_TUD_CDC_TX_BUFSIZE];
+            memcpy(int_buf, buf, ringbuf_received);
+            vRingbufferReturnItem(usb_sendbuf, (void *) buf);
+```
+
+Данные копируются в локальный стековый буфер, а оригинальный слот в кольцевом буфере **сразу освобождается** — чтобы `transport_data_received_callback` мог продолжать писать туда новые данные не дожидаясь окончания USB передачи.
+
+**Шаг 3 — отправка по частям с подтверждением:**
+
+```75:91:c:\Users\q\Desktop\ESP32\Bridge_NOT_original\esp-usb-bridge\main\serial_bridge.c
+            for (int transferred = 0, to_send = ringbuf_received; transferred < ringbuf_received;) {
+                xSemaphoreGive(usb_tx_requested);
+                const int wr_len = tud_cdc_write(int_buf + transferred, to_send);
+                /* tinyusb might have been flushed the data. In case not flushed, we are flushing here.
+                    2nd attempt might return zero, meaning there is no data to transfer. So it is safe to call it again.
+                */
+                tud_cdc_write_flush();
+                if (usb_wait_for_tx(50) != ESP_OK) {
+                    xSemaphoreTake(usb_tx_requested, 0);
+                    tud_cdc_write_clear(); /* host might be disconnected. drop the buffer */
+                    ESP_LOGV(TAG, "usb tx timeout");
+                    break;
+                }
+                ESP_LOGD(TAG, "USB ringbuffer -> USB CDC (%d bytes)", wr_len);
+                transferred += wr_len;
+                to_send -= wr_len;
+            }
+```
+
+Это самая важная часть. Механизм синхронизации через два семафора:
+
+```
+usb_sender_task              tud_cdc_tx_complete_cb (ISR/callback)
+       │                                │
+  Give(tx_requested) ──────────────────►│
+       │                                │  "я жду подтверждения"
+  tud_cdc_write()                       │
+  tud_cdc_write_flush()                 │
+       │                                │
+  Take(tx_done, 50мс) ◄─── Give(tx_done)│  "USB пакет ушёл"
+       │                                │
+  [если таймаут] → drop buffer
+```
+
+`usb_tx_requested` — "флаг что мы ожидаем callback". Нужен чтобы `tud_cdc_tx_complete_cb` не давал `tx_done` вхолостую (TinyUSB иногда вызывает callback лишний раз).
+
+---
+
+## Как встроить дамп
+
+Правильная архитектура — **через тот же `usb_sendbuf`**. Из `logger_handler.c` пишем в кольцевой буфер, `usb_sender_task` сам всё отправит. Не нужно трогать `usb_sender_task` вообще.
+
+```
+logger_proc_task                serial_bridge.c
+       │                               │
+  [флаг ошибки]                        │
+       │                               │
+  dump_to_usb_sendbuf() ──► xRingbufferSend(usb_sendbuf, ...)
+                                       │
+                                       ▼
+                              usb_sender_task (уже работает)
+                                       │
+                                       ▼
+                              tud_cdc_write() → USB → ПК
+```
+
+Для этого нужно:
+
+1. В `serial_bridge.h` объявить публичную функцию:
+```c
+esp_err_t serial_bridge_send_raw(const uint8_t *data, size_t len);
+```
+
+2. В `serial_bridge.c` реализовать её — она просто пишет в `usb_sendbuf`:
+```c
+esp_err_t serial_bridge_send_raw(const uint8_t *data, size_t len)
+{
+    if (xRingbufferSend(usb_sendbuf, data, len, pdMS_TO_TICKS(50)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+```
+
+3. В `logger_handler.c` при обнаружении флага ошибки вызывать её порциями по `CFG_TUD_CDC_TX_BUFSIZE` байт:
+```c
+// Сначала отправить заголовок DumpHeader_t
+// Потом в цикле по кадрам:
+serial_bridge_send_raw(frame->Tx_Buffer, sizeof(ModulData_t));
+```
+
+**Единственное ограничение:** `usb_sendbuf` всего **2 КБ**, а дамп ~800 КБ. Нужно либо увеличить `USB_SEND_RINGBUFFER_SIZE`, либо (лучше) отправлять с паузами — `usb_sender_task` успевает опустошать буфер быстрее чем логгер его заполняет.

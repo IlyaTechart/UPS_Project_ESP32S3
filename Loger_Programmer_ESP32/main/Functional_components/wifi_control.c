@@ -263,42 +263,42 @@ char* generate_ups_json_string(void)
 
     /* INPUT — uint16_t x0.1 В, x0.01 Гц; в JSON отдаём реальные значения */
     cJSON *input = cJSON_CreateObject();
-    cJSON_AddNumberToObject(input, "v_ab", ModulData.packet.input.v_in_AB / 10.0);
-    cJSON_AddNumberToObject(input, "v_bc", ModulData.packet.input.v_in_BC / 10.0);
-    cJSON_AddNumberToObject(input, "v_ca", ModulData.packet.input.v_in_CA / 10.0);
-    cJSON_AddNumberToObject(input, "v_bp_a", ModulData.packet.input.v_bypass_A / 10.0);
-    cJSON_AddNumberToObject(input, "v_bp_b", ModulData.packet.input.v_bypass_B / 10.0);
-    cJSON_AddNumberToObject(input, "v_bp_c", ModulData.packet.input.v_bypass_C / 10.0);
-    cJSON_AddNumberToObject(input, "i_a", ModulData.packet.input.i_in_A / 10.0);
-    cJSON_AddNumberToObject(input, "i_b", ModulData.packet.input.i_in_B / 10.0);
-    cJSON_AddNumberToObject(input, "i_c", ModulData.packet.input.i_in_C / 10.0);
-    cJSON_AddNumberToObject(input, "freq", ModulData.packet.input.freq_in / 100.0);
+    cJSON_AddNumberToObject(input, "v_ab", ModulData.packet.input.v_in_AB / 100.0);
+    cJSON_AddNumberToObject(input, "v_bc", ModulData.packet.input.v_in_BC / 100.0);
+    cJSON_AddNumberToObject(input, "v_ca", ModulData.packet.input.v_in_CA / 100.0);
+    cJSON_AddNumberToObject(input, "v_bp_a", ModulData.packet.input.v_bypass_A / 100.0);
+    cJSON_AddNumberToObject(input, "v_bp_b", ModulData.packet.input.v_bypass_B / 100.0);
+    cJSON_AddNumberToObject(input, "v_bp_c", ModulData.packet.input.v_bypass_C / 100.0);
+    cJSON_AddNumberToObject(input, "i_a", ModulData.packet.input.i_in_A / 100.0);
+    cJSON_AddNumberToObject(input, "i_b", ModulData.packet.input.i_in_B / 100.0);
+    cJSON_AddNumberToObject(input, "i_c", ModulData.packet.input.i_in_C / 100.0);
+    cJSON_AddNumberToObject(input, "freq", ModulData.packet.input.freq_in / 1000.0);
     cJSON_AddItemToObject(root, "input", input);
 
     /* OUTPUT — uint16_t x0.1 (V, A, kW, kVA, %), freq x0.01, event_count целое */
     cJSON *output = cJSON_CreateObject();
-    cJSON_AddNumberToObject(output, "v_a", ModulData.packet.output.v_out_A / 10.0);
-    cJSON_AddNumberToObject(output, "v_b", ModulData.packet.output.v_out_B / 10.0);
-    cJSON_AddNumberToObject(output, "v_c", ModulData.packet.output.v_out_C / 10.0);
+    cJSON_AddNumberToObject(output, "v_a", ModulData.packet.output.v_out_A / 100.0);
+    cJSON_AddNumberToObject(output, "v_b", ModulData.packet.output.v_out_B / 100.0);
+    cJSON_AddNumberToObject(output, "v_c", ModulData.packet.output.v_out_C / 100.0);
     cJSON_AddNumberToObject(output, "freq", ModulData.packet.output.freq_out / 100.0);
-    cJSON_AddNumberToObject(output, "i_a", ModulData.packet.output.i_out_A / 10.0);
-    cJSON_AddNumberToObject(output, "i_b", ModulData.packet.output.i_out_B / 10.0);
-    cJSON_AddNumberToObject(output, "i_c", ModulData.packet.output.i_out_C / 10.0);
-    cJSON_AddNumberToObject(output, "p_act_a", ModulData.packet.output.p_active_A / 10.0);
-    cJSON_AddNumberToObject(output, "p_act_b", ModulData.packet.output.p_active_B / 10.0);
-    cJSON_AddNumberToObject(output, "p_act_c", ModulData.packet.output.p_active_C / 10.0);
-    cJSON_AddNumberToObject(output, "load_a", ModulData.packet.output.load_pct_A / 10.0);
-    cJSON_AddNumberToObject(output, "load_b", ModulData.packet.output.load_pct_B / 10.0);
-    cJSON_AddNumberToObject(output, "load_c", ModulData.packet.output.load_pct_C / 10.0);
+    cJSON_AddNumberToObject(output, "i_a", ModulData.packet.output.i_out_A / 100.0);
+    cJSON_AddNumberToObject(output, "i_b", ModulData.packet.output.i_out_B / 100.0);
+    cJSON_AddNumberToObject(output, "i_c", ModulData.packet.output.i_out_C / 100.0);
+    cJSON_AddNumberToObject(output, "p_act_a", ModulData.packet.output.p_active_A / 100.0);
+    cJSON_AddNumberToObject(output, "p_act_b", ModulData.packet.output.p_active_B / 100.0);
+    cJSON_AddNumberToObject(output, "p_act_c", ModulData.packet.output.p_active_C / 100.0);
+    cJSON_AddNumberToObject(output, "load_a", ModulData.packet.output.load_pct_A / 100.0);
+    cJSON_AddNumberToObject(output, "load_b", ModulData.packet.output.load_pct_B / 100.0);
+    cJSON_AddNumberToObject(output, "load_c", ModulData.packet.output.load_pct_C / 100.0);
     cJSON_AddItemToObject(root, "output", output);
 
     /* BATTERY — uint16_t x0.1 В/А, capacity/backup целые; bat_current знаковый (int16_t) */
     cJSON *bat = cJSON_CreateObject();
-    cJSON_AddNumberToObject(bat, "v", ModulData.packet.battery.bat_voltage / 10.0);
-    cJSON_AddNumberToObject(bat, "dc_bus", ModulData.packet.battery.dc_bus_voltage / 10.0);
-    cJSON_AddNumberToObject(bat, "curr", (double)(int16_t)ModulData.packet.battery.bat_current / 10.0);
-    cJSON_AddNumberToObject(bat, "cap", (double)ModulData.packet.battery.bat_capacity);
-    cJSON_AddNumberToObject(bat, "time", (double)ModulData.packet.battery.backup_time);
+    cJSON_AddNumberToObject(bat, "v", ModulData.packet.battery.bat_voltage / 100.0);
+    cJSON_AddNumberToObject(bat, "dc_bus", ModulData.packet.battery.dc_bus_voltage / 100.0);
+    cJSON_AddNumberToObject(bat, "curr", (double)(int16_t)ModulData.packet.battery.bat_current / 100.0);
+    cJSON_AddNumberToObject(bat, "cap", (double)ModulData.packet.battery.bat_capacity / 10.0);
+    cJSON_AddNumberToObject(bat, "time", (double)ModulData.packet.battery.backup_time / 10.0);
     cJSON_AddItemToObject(root, "bat", bat);
 
     char *string = cJSON_PrintUnformatted(root);

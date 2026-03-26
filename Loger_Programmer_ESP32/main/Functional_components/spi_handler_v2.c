@@ -17,6 +17,7 @@
 #include "esp_heap_caps.h"
 #include "logger_handler.h"
 #include "esp_timer.h"
+#include "functional_manager.h"
 
 #define CRC32_POLY  0xEDB88320
 #define TAG         "spi_slave_v2"
@@ -163,7 +164,7 @@ void spi_slave_init(void)
             return;
         }
         xSemaphoreGive(s_spi2_driver_sem);
-        if (xTaskCreate(spi_slave_driver_task_spi2, "spi2_drv", 4096, NULL, 7, &TaskHandleDriver_spi2) != pdPASS) {
+        if (xTaskCreatePinnedToCore(spi_slave_driver_task_spi2, "spi2_drv", 4096, NULL, 7, &TaskHandleDriver_spi2, 1) != pdPASS) {
             ESP_LOGE(TAG, "Failed to create SPI2 driver task");
         }
     }
@@ -194,7 +195,7 @@ void spi_slave_init(void)
             s_spi3_driver_sem = xSemaphoreCreateBinary();
             if (s_spi3_driver_sem != NULL) {
                 xSemaphoreGive(s_spi3_driver_sem);
-                if (xTaskCreate(spi_slave_driver_task_spi3, "spi3_drv", 4096, NULL, 7, &TaskHandleDriver_spi3) != pdPASS) {
+                if (xTaskCreatePinnedToCore(spi_slave_driver_task_spi3, "spi3_drv", 4096, NULL, 7, &TaskHandleDriver_spi3, 1) != pdPASS) {
                     ESP_LOGE(TAG, "Failed to create SPI3 driver task");
                 }
             }
@@ -203,7 +204,7 @@ void spi_slave_init(void)
 #endif
 
     /* Одна задача обработки: обрабатывает приём с обоих SPI и выводит в терминал */
-    if (xTaskCreate(spi_slave_processing_task, "spi_proc", 4096, NULL, 6, &TaskHandle_Proc) != pdPASS) {
+    if (xTaskCreatePinnedToCore(spi_slave_processing_task, "spi_proc", 4096, NULL, 6, &TaskHandle_Proc, 1) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create SPI processing task");
     }
 
@@ -235,6 +236,14 @@ static void spi_slave_driver_task_spi2(void *pvParameters)
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "SPI2 transmit failed: %s", esp_err_to_name(ret));
         }
+        uint32_t notif = ulTaskNotifyTake(pdTRUE, 0); // не блокируем (timeout=0)
+        if (notif > 0)
+        {
+            ESP_LOGI(TAG, "SPI2_Driver: suspending itself safely");
+            vTaskSuspend(NULL);  // задача сама себя останавливает
+            // После vTaskResume() снаружи — продолжит отсюда
+            ESP_LOGI(TAG, "SPI2_Driver: resumed");
+        }
         xSemaphoreTake(s_spi2_driver_sem, portMAX_DELAY);
     }
 }
@@ -259,6 +268,14 @@ static void spi_slave_driver_task_spi3(void *pvParameters)
         esp_err_t ret = spi_slave_transmit(SPI3_HOST, &t, portMAX_DELAY);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "SPI3 transmit failed: %s", esp_err_to_name(ret));
+        }
+        uint32_t notif = ulTaskNotifyTake(pdTRUE, 0); // не блокируем (timeout=0)
+        if (notif > 0)
+        {
+            ESP_LOGI(TAG, "SPI3_Driver: suspending itself safely");
+            vTaskSuspend(NULL);  // задача сама себя останавливает
+            // После vTaskResume() снаружи — продолжит отсюда
+            ESP_LOGI(TAG, "SPI3_Driver: resumed");
         }
         xSemaphoreTake(s_spi3_driver_sem, portMAX_DELAY);
     }
@@ -320,6 +337,15 @@ static void spi_slave_processing_task(void *pvParameters)
 #if CONFIG_SPI_SLAVE_SPI2_ENABLED
     /* Оба SPI: ждём любое событие из набора очередей */
     for (;;) {
+        uint32_t notif = ulTaskNotifyTake(pdTRUE, 0); // не блокируем (timeout=0)
+        if (notif > 0)
+        {
+            ESP_LOGI(TAG, "SPI_Proc: suspending itself safely");
+            vTaskSuspend(NULL);  // задача сама себя останавливает
+            // После vTaskResume() снаружи — продолжит отсюда
+            ESP_LOGI(TAG, "SPI_Proc: resumed");
+        }
+
         QueueHandle_t active = (QueueHandle_t)xQueueSelectFromSet(s_spi_evt_queue_set, portMAX_DELAY);
         if (active == NULL) continue;
         if (xQueueReceive(active, &msg, 0) != pdPASS) continue;
@@ -359,6 +385,16 @@ static void spi_slave_processing_task(void *pvParameters)
 #else
     /* Только SPI2: одна очередь */
     for (;;) {
+
+        uint32_t notif = ulTaskNotifyTake(pdTRUE, 0); // не блокируем (timeout=0)
+        if (notif > 0)
+        {
+            ESP_LOGI(TAG, "SPI_Proc: suspending itself safely");
+            vTaskSuspend(NULL);  // задача сама себя останавливает
+            // После vTaskResume() снаружи — продолжит отсюда
+            ESP_LOGI(TAG, "SPI_Proc: resumed");
+        }
+
         QueueHandle_t active = (QueueHandle_t)xQueueSelectFromSet(s_spi_evt_queue_set, portMAX_DELAY);
         if (active == NULL) continue;
         if (xQueueReceive(active, &msg, 0) != pdPASS) continue;
@@ -374,22 +410,11 @@ static void spi_slave_processing_task(void *pvParameters)
 
         RingBuffStatus = RingBuffWrite(&ModulData);
 
-        // if(RingBuffStatus == RINGBUF_OK){
-        //     ESP_LOGI(TAG_UPS, "RINGBUF_OK");
-        // }else if(RingBuffStatus == RINGBUF_NULL_POINTER){
-        //     ESP_LOGI(TAG_UPS, "RINGBUF_NULL_POINTER");
-        // }else if(RingBuffStatus == RINGBUF_OVERFLOW){
-        //     ESP_LOGI(TAG_UPS, "RINGBUF_OVERFLOW");
-        // }else if(RingBuffStatus == RINGBUF_MUTEX_NOT_GIVE){
-        //     ESP_LOGI(TAG_UPS, "RINGBUF_MUTEX_NOT_GIVE");
-        // }
-
-
         if (ModulData.packet.crc32 != spi_slave_crc32(ModulData.Tx_Buffer, msg.len - 4)) {
             ESP_LOGE(TAG, "[SPI3] CRC error");
         } else {
             // ESP_LOGI(TAG_UPS, "Dela Time: %lu", (unsigned)(ModulData.packet.system_time_ms));
-            //spi_slave_print_ups_packet(&ModulData.packet, "SPI2");
+            //spi_slave_print_ups_packet(&ModulData.packet, "SPI3");
         }
         xSemaphoreGive(s_spi3_driver_sem);
     }
@@ -605,20 +630,50 @@ static uint32_t spi_slave_crc32(const void *data, size_t len)
 void spi_slave_suspend(void)
 {
 #if CONFIG_SPI_SLAVE_SPI2_ENABLED
-    if (TaskHandleDriver_spi2 != NULL) {
-        vTaskSuspend(TaskHandleDriver_spi2);
+
+    if (TaskHandleDriver_spi2 != NULL)
+    {
+        // Посылаем уведомление задаче
+        xTaskNotifyGive(TaskHandleDriver_spi2);
+        // Ждём пока задача реально заснёт (max 500мс)
+        uint32_t timeout = 500;
+        while (eTaskGetState(TaskHandleDriver_spi2) != eSuspended && timeout > 0)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            timeout -= 10;
+        }
     }
+
 #endif
 
 #if CONFIG_SPI_SLAVE_SPI3_ENABLED
-    if (TaskHandleDriver_spi3 != NULL) {
-        vTaskSuspend(TaskHandleDriver_spi3);
+    if (TaskHandleDriver_spi3 != NULL)
+    {
+        // Посылаем уведомление задаче
+        xTaskNotifyGive(TaskHandleDriver_spi3);
+        // Ждём пока задача реально заснёт (max 500мс)
+        uint32_t timeout = 500;
+        while (eTaskGetState(TaskHandleDriver_spi3) != eSuspended && timeout > 0)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            timeout -= 10;
+        }
     }
 #endif
 
-    if (TaskHandle_Proc != NULL) {
-        vTaskSuspend(TaskHandle_Proc);
+    if (TaskHandle_Proc != NULL)
+    {
+        // Посылаем уведомление задаче
+        xTaskNotifyGive(TaskHandle_Proc);
+        // Ждём пока задача реально заснёт (max 500мс)
+        uint32_t timeout = 500;
+        while (eTaskGetState(TaskHandle_Proc) != eSuspended && timeout > 0)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            timeout -= 10;
+        }
     }
+
 
     ESP_LOGI(TAG, "SPI Slave tasks suspended");
 }

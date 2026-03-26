@@ -6,6 +6,7 @@ sdkconfig.old
 sdkconfig.ci
 dependencies.lock
 __pycache__/
+Loger_Programmer_ESP32_v1/
 
 # --- STM32 (CubeIDE / Keil) ---
 Debug/

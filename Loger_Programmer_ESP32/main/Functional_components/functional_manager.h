@@ -33,7 +33,7 @@
 
 #define COMP_SET(mask)      (g_initialized |= (mask))
 #define COMP_CLEAR(mask)    (g_initialized &= ~(mask))
-#define COMP_IS_INIT(mask)  ((g_initialized & (mask)) == (mask))
+#define COMP_IS_GO(mask)  ((g_initialized & (mask)) == (mask))
 
 typedef enum {
     COMP_NONE       = 0,

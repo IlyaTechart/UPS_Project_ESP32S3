@@ -4,7 +4,7 @@
 #include "frames_structure.h"
 #include "wifi_control.h"
 
-#define SIZE_OF_CIRCULAR_BUFFER  10  //Колличесвто структур-кадров которые будут храниться в кольцевом буфере
+#define SIZE_OF_CIRCULAR_BUFFER  10000  //Колличесвто структур-кадров которые будут храниться в кольцевом буфере
 #define NUMBER_OF_REMAINING_EMPTY  5
 
 #if (SIZE_OF_CIRCULAR_BUFFER - 1) <= NUMBER_OF_REMAINING_EMPTY
@@ -98,10 +98,10 @@ typedef struct {
 } GroupBattery_x64_t;
 
 typedef struct {
-    GroupInput_x64_t   input;         // 10 регистров = 20 байт
-    GroupOutput_x64_t  output;        // 17 регистров = 34 байта
-    GroupBattery_x64_t battery;       // 6 регистров = 12 байт
-} FPGA_mov_acrage_x64_t;
+    GroupInput_x64_t   input;         // 80 байт 
+    GroupOutput_x64_t  output;        // 136 байт 
+    GroupBattery_x64_t battery;       // 48 байт
+} FPGA_mov_acrage_x64_t;              // Total = 264 байт 
 
 
 typedef struct{
@@ -109,7 +109,7 @@ typedef struct{
     volatile size_t tail;               // Точка чтения 
     volatile size_t head;               // Точка записи 
     volatile size_t size_byte;          // Размер буфера 
-    volatile size_t cnt_cpyes;         // Количество копий
+    volatile size_t cnt_cpyes;          // Количество копий
     volatile size_t count;              // ТЕКУЩЕЕ количество элементов в буфере
     volatile size_t cell_size;          // Размер одной ячейки (байт)
     volatile bool is_full;              // Флаг переполнения
@@ -129,10 +129,19 @@ typedef struct {
     GroupBattery_t battery;
 } FpgaRmsData_t;
 
+// Структура дампа отправляемого на HOST при аварии
+typedef struct {
+    uint32_t magic;        // 0xDEADBEEF — маркер начала дампа
+    uint32_t frame_count;  // сколько кадров будет
+    uint32_t frame_size;   // sizeof(ModulData_t)
+    uint32_t timestamp_ms; // время события
+} DumpHeader_t;
+
 void logger_Inint(void);
 void logger_suspend(void);
 void logger_resume(void);
 
+size_t get_elements_count(RingBuffModulData_t *rb);
 RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData);
 
 // Глобальная структура с RMS-значениями по данным от FPGA

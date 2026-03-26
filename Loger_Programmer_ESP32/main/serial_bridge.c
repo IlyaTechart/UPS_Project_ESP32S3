@@ -17,23 +17,59 @@
 #include "freertos/task.h"
 #include "freertos/ringbuf.h"
 #include "freertos/semphr.h"
-#include "freertos/queue.h"
 #include "esp_timer.h"
 #include "util.h"
 #include "debug_probe.h"
+#include "logger_handler.h"
 
 #define USB_SEND_RINGBUFFER_SIZE (2 * 1024)
 
 static const char *TAG = "serial_bridge";
+
 static uint8_t cmd_buf[8];
 static uint8_t cmd_buf_pos = 0;
 
 QueueHandle_t queue_serial_RX;
 
+TaskHandle_t DumpTask_Handler;
+
+extern RingBuffModulData_t RingBuffModulData;
+extern SemaphoreHandle_t bufferMutex;
+
 static RingbufHandle_t usb_sendbuf;
 static SemaphoreHandle_t usb_tx_requested = NULL;
 static SemaphoreHandle_t usb_tx_done = NULL;
 static esp_timer_handle_t state_change_timer;
+
+// Отправка дампа ВСЕГО буфера на HOST 
+static void dump_ringbuf_to_usb_cdc(RingBuffModulData_t *rb)
+{
+    if (rb->buffer == NULL) return;
+    if (!tud_cdc_connected()) return;  // хост должен быть подключён
+
+    size_t count = get_elements_count(rb);
+    size_t idx = rb->tail;
+
+    for (size_t i = 0; i < count; i++) {
+        ModulData_t *frame = &rb->buffer[idx];
+
+        // Отправляем сырые байты кадра
+        uint32_t written = 0;
+        uint32_t remaining = sizeof(ModulData_t);
+        uint8_t *ptr = frame->Tx_Buffer;
+
+        while (remaining > 0) {
+            uint32_t chunk = tud_cdc_write(ptr, remaining);
+            written += chunk;
+            ptr += chunk;
+            remaining -= chunk;
+            tud_cdc_write_flush();
+            vTaskDelay(pdMS_TO_TICKS(1)); // даём TinyUSB время отправить
+        }
+
+        idx = (idx + 1) % rb->cnt_cpyes;
+    }
+}
 
 // Transport data received callback - called by serial handler when data arrives
 static void transport_data_received_callback(const uint8_t *data, size_t len)
@@ -98,6 +134,29 @@ static void usb_sender_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+static void dump_task(void *pvParameters)
+{
+    while(1)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); 
+        if (xSemaphoreTake(bufferMutex, portMAX_DELAY) == pdTRUE)
+        {
+            ESP_LOGD(TAG, "Start DUMP!");
+            dump_ringbuf_to_usb_cdc(&RingBuffModulData);
+            xSemaphoreGive(bufferMutex);
+            ESP_LOGD(TAG, "END DUMP!");
+
+            memset(RingBuffModulData.buffer, 0x00, RingBuffModulData.size_byte);
+
+        }
+        // После дампа — "глотаем" все уведомления которые накопились
+        // пока шёл дамп, чтобы не делать повторный дамп сразу
+        ulTaskNotifyTake(pdTRUE, 0); // — неблокирующий сброс
+
+    }
+    vTaskDelete(NULL);
+}
+
 void tud_cdc_tx_complete_cb(const uint8_t itf)
 {
     if (xSemaphoreTake(usb_tx_requested, 0) != pdTRUE) {
@@ -133,7 +192,7 @@ void tud_cdc_rx_cb(const uint8_t itf)
                     break;
                 }
             }
-
+            serial_handler_send_data(buf, rx_size);
         }
         
     } else {
@@ -239,9 +298,22 @@ esp_err_t serial_bridge_init(void)
     init_state_change_timer();
 
     // Start USB sender task
-    xTaskCreate(usb_sender_task, "usb_sender_task", 4 * 1024, NULL, SERIAL_HANDLER_TASK_PRI, NULL);
+    if( xTaskCreatePinnedToCore(usb_sender_task, "usb_sender_task", 4 * 1024, NULL, SERIAL_HANDLER_TASK_PRI, NULL, 0) != pdPASS )
+    {
+        ESP_LOGE(TAG, "Failed to create USB SENDER task");
+    }
+    
+    if( xTaskCreatePinnedToCore(dump_task, "dump_sender_task", 2 * 1024, NULL, 7, &DumpTask_Handler, 1) != pdPASS )
+    {
+        ESP_LOGE(TAG, "Failed to create DUMP SSENDER task");
+    }
 
     queue_serial_RX = xQueueCreate(4, CDC_CMD_COMAND_SIZE );
+
+    if(queue_serial_RX == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create queue_serial_RX");
+    }
 
     ESP_LOGI(TAG, "Serial bridge initialized");
     return ESP_OK;

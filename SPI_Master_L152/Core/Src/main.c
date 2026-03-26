@@ -27,7 +27,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#define TIME_DELAY 200
+#define TIME_DELAY 1000
 
 /* USER CODE END PTD */
 
@@ -139,8 +139,8 @@ int main(void)
 		  HAL_Delay(TIME_DELAY);
 	  }else{
 		  SetVelueInStruckt(&ModulData);
-		  ModulData.packet.status.raw = (uint16_t)0;
-		  ModulData.packet.alarms.raw = (uint16_t)0;
+		  ModulData.packet.alarms.raw = (uint16_t)0x0;
+		  ModulData.packet.status.raw = (uint16_t)0x0;
 		  ModulData.packet.crc32 = calculate_crc32(ModulData.Tx_Buffer, sizeof(ModulData.Tx_Buffer) - 4);
 		  HAL_GPIO_WritePin(SPI2_CS_GPIO_Port, SPI2_CS_Pin, RESET);
 		  HAL_SPI_Transmit(&hspi2, ModulData.Tx_Buffer , sizeof(ModulData.Tx_Buffer), HAL_MAX_DELAY);

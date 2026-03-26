@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
 #include <stdlib.h>
 #include "util.h"
 #include "esp_log.h"
@@ -24,34 +23,9 @@
 #include "debug_probe.h"
 #include "usb_defs.h"
 #include "led_io.h"
-#include "wifi_control.h"
-#include "spi_handler_v2.h"
-#include "logger_handler.h"
-#include "main.h"
 #include "functional_manager.h"
-//#include "esp_app_trace.h"
-
-
-#define ENABLE_WEB_INTERFACE 0
-#define ENABLE_ESP_BRIDGE    1
-#define ENABLE_LOGGER 0
-
-#if CONFIG_APPTRACE_SV_ENABLE
-
-#define SYSVIEW_EXAMPLE_SEND_EVENT_ID     0
-#define SYSVIEW_EXAMPLE_WAIT_EVENT_ID     1
-
-#define SYSVIEW_EXAMPLE_SEND_EVENT_START()  SEGGER_SYSVIEW_OnUserStart(SYSVIEW_EXAMPLE_SEND_EVENT_ID)
-#define SYSVIEW_EXAMPLE_SEND_EVENT_END(_val_)    SEGGER_SYSVIEW_OnUserStop(SYSVIEW_EXAMPLE_SEND_EVENT_ID)
-#define SYSVIEW_EXAMPLE_WAIT_EVENT_START()  SEGGER_SYSVIEW_OnUserStart(SYSVIEW_EXAMPLE_WAIT_EVENT_ID)
-#define SYSVIEW_EXAMPLE_WAIT_EVENT_END(_val_)    SEGGER_SYSVIEW_OnUserStop(SYSVIEW_EXAMPLE_WAIT_EVENT_ID)
-
-#endif
 
 static const char *TAG = "bridge_main";
-
-
-
 
 #define TUSB_DESC_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_VENDOR_DESC_LEN + TUD_MSC_DESC_LEN)
 
@@ -239,7 +213,6 @@ static void serial_rx_activity_callback(bool active)
     gpio_set_level(LED_TX, active ? LED_TX_ON : LED_TX_OFF);
 }
 
-
 static void init_led_gpios(void)
 {
     gpio_config_t io_conf = {};
@@ -258,8 +231,6 @@ static void init_led_gpios(void)
     ESP_LOGI(TAG, "LED GPIO init done");
 }
 
-
-
 static void int_usb_phy(void)
 {
     usb_phy_config_t phy_config = {
@@ -274,32 +245,24 @@ static void int_usb_phy(void)
     usb_new_phy(&phy_config, &phy_handle);
 }
 
-
 void app_main(void)
 {
-  
-    BaseType_t  xTaskReturned = {0};
-
     init_led_gpios(); // Keep this at the beginning. LEDs are used for error reporting.
 
     init_serial_no();
 
     int_usb_phy();
 
-    ESP_ERROR_CHECK(serial_handler_init(TRANSPORT_TYPE_UART));                      // Здесь есть выеление памяти под задачу
+    ESP_ERROR_CHECK(serial_handler_init(TRANSPORT_TYPE_UART));
     serial_handler_register_tx_activity_callback(serial_tx_activity_callback);
     serial_handler_register_rx_activity_callback(serial_rx_activity_callback);
 
-    ESP_ERROR_CHECK(serial_bridge_init());                                          // Здесь есть выеление памяти под задачу
+    ESP_ERROR_CHECK(serial_bridge_init());
 
     tusb_init();
     msc_init();
 
-    xTaskReturned = xTaskCreate(tusb_device_task, "tusb_device_task", 4 * 1024, NULL, 5, NULL);
-    if(xTaskReturned != pdPASS)
-    {
-        ESP_LOGE(TAG, "IS NOT CREATED: tusb_device_task");
-    }
+    xTaskCreatePinnedToCore( tusb_device_task, "tusb_device_task", 4 * 1024, NULL, 5, NULL, 0);
 
     wifi_web_init();
 
@@ -309,9 +272,7 @@ void app_main(void)
 
     Function_Init();
 
-    ESP_LOGI(TAG, "Program out of the MAIN_app");
+    vTaskDelay(pdMS_TO_TICKS(10));
 
+    ESP_LOGI(TAG, "Program exit app_main");
 }
-
-
-
