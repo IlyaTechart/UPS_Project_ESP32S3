@@ -133,15 +133,17 @@ static void debug_activity_callback(bool active)
 void tud_mount_cb(void)
 {
     ESP_LOGI(TAG, "Mounted");
-
     eub_vendord_start();
-
-    esp_err_t debug_result = debug_probe_init();
-    if (debug_result != ESP_OK) {
-        ESP_LOGW(TAG, "Debug probe initialization failed: %s", esp_err_to_name(debug_result));
-        eub_abort();
+    static bool debug_probe_initialized = false;
+    if (!debug_probe_initialized) {
+        esp_err_t debug_result = debug_probe_init();
+        if (debug_result != ESP_OK) {
+            ESP_LOGW(TAG, "Debug probe initialization failed: %s", esp_err_to_name(debug_result));
+            eub_abort();
+        }
+        debug_probe_register_activity_callback(debug_activity_callback);
+        debug_probe_initialized = true;
     }
-    debug_probe_register_activity_callback(debug_activity_callback);
 }
 
 static void init_serial_no(void)

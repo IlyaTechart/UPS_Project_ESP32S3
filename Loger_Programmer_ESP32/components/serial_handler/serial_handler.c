@@ -162,7 +162,7 @@ static esp_err_t init_uart_transport(void)
         ESP_LOGI(TAG, "UART have been initialized");
 
         // Start UART event task
-        xTaskCreate(uart_event_task, "uart_task", KB(8), NULL, SERIAL_HANDLER_TASK_PRI, NULL);
+        xTaskCreatePinnedToCore(uart_event_task, "uart_task", KB(8), NULL, SERIAL_HANDLER_TASK_PRI, NULL, 0);
 
         return ESP_OK;
     } else {

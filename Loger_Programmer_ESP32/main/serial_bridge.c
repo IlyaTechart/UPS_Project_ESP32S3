@@ -42,10 +42,10 @@ static SemaphoreHandle_t usb_tx_done = NULL;
 static esp_timer_handle_t state_change_timer;
 
 // Отправка дампа ВСЕГО буфера на HOST 
-static void dump_ringbuf_to_usb_cdc(RingBuffModulData_t *rb)
+static esp_err_t dump_ringbuf_to_usb_cdc(RingBuffModulData_t *rb)
 {
-    if (rb->buffer == NULL) return;
-    if (!tud_cdc_connected()) return;  // хост должен быть подключён
+    if (rb->buffer == NULL) return ESP_FAIL ;
+    if (!tud_cdc_connected()) return ESP_ERR_INVALID_STATE;  // хост должен быть подключён
 
     size_t count = get_elements_count(rb);
     size_t idx = rb->tail;
@@ -69,6 +69,8 @@ static void dump_ringbuf_to_usb_cdc(RingBuffModulData_t *rb)
 
         idx = (idx + 1) % rb->cnt_cpyes;
     }
+
+    return ESP_OK;
 }
 
 // Transport data received callback - called by serial handler when data arrives
@@ -141,13 +143,17 @@ static void dump_task(void *pvParameters)
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY); 
         if (xSemaphoreTake(bufferMutex, portMAX_DELAY) == pdTRUE)
         {
-            ESP_LOGD(TAG, "Start DUMP!");
-            dump_ringbuf_to_usb_cdc(&RingBuffModulData);
+            ESP_LOGI(TAG, "Start DUMP!");
+            if( dump_ringbuf_to_usb_cdc(&RingBuffModulData) != ESP_OK)
+            {
+                ESP_LOGE(TAG, "ESP has wrong whith USB send!");
+            }
             xSemaphoreGive(bufferMutex);
-            ESP_LOGD(TAG, "END DUMP!");
+            ESP_LOGI(TAG, "END DUMP!");
 
             memset(RingBuffModulData.buffer, 0x00, RingBuffModulData.size_byte);
-
+            RingBuffModulData.tail = 0;
+            RingBuffModulData.head = 0;
         }
         // После дампа — "глотаем" все уведомления которые накопились
         // пока шёл дамп, чтобы не делать повторный дамп сразу

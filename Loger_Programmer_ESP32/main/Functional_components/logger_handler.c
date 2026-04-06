@@ -44,7 +44,6 @@ void sub_sample_from_average(ModulData_t* ModulData);
 static void calculate_moving_average_from_buffer(void);
 static void logger_print_avg_data(const FpgaRmsData_t *avg);
 static void print_error_flag_frame(RingBuffModulData_t *RingBuffModulData, UpsRegisterFlags_t *UpsRegisterFlags);
-static void dump_ringbuf_to_usb_cdc(RingBuffModulData_t *rb);
 void time_calculate_DEBUG(RingBuffModulData_t *RingBuffModulData);
 static void logger_proc_task(void *pvParameters);
 
@@ -536,10 +535,13 @@ static void logger_proc_task(void *pvParameters)
             // ESP_LOGI(TAG, "logger stack free: %u bytes", (unsigned)(hwm * sizeof(StackType_t)));
         } 
 
-        if(RingBuffModulData.buffer[RingBuffModulData.head - 1].packet.alarms.raw)
+        if(RingBuffModulData.head > 0)
         {
-            xTaskNotifyGive(DumpTask_Handler);
-            ESP_LOGI(TAG, "Send Task Notify");
+            if(RingBuffModulData.buffer[RingBuffModulData.head - 1].packet.alarms.raw)
+            {
+                xTaskNotifyGive(DumpTask_Handler);
+                ESP_LOGI(TAG, "Send Task Notify");
+            }
         }
         // Участок для логирования информации раз в 1 сек. 
         /////////////////////////////////////////////////////////////////////////////////////////////
@@ -548,7 +550,7 @@ static void logger_proc_task(void *pvParameters)
             last_print_ms = now_ms;
             FpgaRmsData_t snapshot;
             memcpy(&snapshot, &gFpgaAvrData, sizeof(snapshot));
-            time_calculate_DEBUG(&RingBuffModulData);
+            //time_calculate_DEBUG(&RingBuffModulData);
             //logger_print_avg_data(&snapshot);
         }
         /////////////////////////////////////////////////////////////////////////////////////////////
