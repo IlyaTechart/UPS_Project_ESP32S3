@@ -33,43 +33,167 @@ QueueHandle_t queue_serial_RX;
 
 TaskHandle_t DumpTask_Handler;
 
-extern RingBuffModulData_t RingBuffModulData;
+//extern RingBuffModulData_t RingBuffModulData;
 extern SemaphoreHandle_t bufferMutex;
+//extern FpgaRmsData_t gFpgaAvrData;
 
 static RingbufHandle_t usb_sendbuf;
 static SemaphoreHandle_t usb_tx_requested = NULL;
 static SemaphoreHandle_t usb_tx_done = NULL;
 static esp_timer_handle_t state_change_timer;
 
+esp_err_t send_usb_aveFrame(char *buffer, uint32_t lenght){
+
+    char send_buff[lenght + 8];
+    uint32_t start_shot = ID_AVE_FRAME_START; 
+
+    if (buffer == NULL){
+        ESP_LOGE(TAG, "send_usb_aveFrame: Ошибка-нулевой указатель на буфер!(NULL)");
+        return ESP_FAIL ;
+    }
+    if (!tud_cdc_connected()){
+        ESP_LOGE(TAG, "Ошибка: USB хост не подключён");
+        return ESP_ERR_INVALID_STATE;  // хост должен быть подключён
+    }
+
+    // TODO
+    send_buff[0] = (start_shot & 0xFF);
+    send_buff[1] = (start_shot >> 8) & 0xFF;
+    send_buff[2] = (start_shot >> 16) & 0xFF;
+    send_buff[3] = (start_shot >> 24) & 0xFF;
+
+    memcpy(&send_buff[5], buffer, lenght);
+
+    for( uint16_t i = 0; i < lenght ; )
+    {
+        uint32_t writen_bytes = tud_cdc_write(send_buff, (lenght - i));
+        i += writen_bytes;
+        if(writen_bytes > 0) tud_cdc_write_flush();
+        
+        vTaskDelay(pdMS_TO_TICKS(1)); // даём TinyUSB время отправить
+    }
+
+    return ESP_OK;
+}
+
+static void error_handler(esp_err_t r) {
+    switch (r) {
+        case ESP_OK:
+            ESP_LOGI(TAG, "ESP_OK: Успешное выполнение");
+            break;
+        case ESP_FAIL:
+            ESP_LOGE(TAG, "ESP_FAIL: Общая ошибка");
+            break;
+        case ESP_ERR_NO_MEM:
+            ESP_LOGE(TAG, "ESP_ERR_NO_MEM: Недостаточно памяти (Out of memory)");
+            break;
+        case ESP_ERR_INVALID_ARG:
+            ESP_LOGE(TAG, "ESP_ERR_INVALID_ARG: Неверный аргумент функции");
+            break;
+        case ESP_ERR_INVALID_STATE:
+            ESP_LOGE(TAG, "ESP_ERR_INVALID_STATE: Неверное состояние (периферия не инициализирована и т.п.)");
+            break;
+        case ESP_ERR_INVALID_SIZE:
+            ESP_LOGE(TAG, "ESP_ERR_INVALID_SIZE: Неверный размер данных");
+            break;
+        case ESP_ERR_NOT_FOUND:
+            ESP_LOGE(TAG, "ESP_ERR_NOT_FOUND: Запрошенный ресурс не найден");
+            break;
+        case ESP_ERR_NOT_SUPPORTED:
+            ESP_LOGE(TAG, "ESP_ERR_NOT_SUPPORTED: Операция не поддерживается");
+            break;
+        case ESP_ERR_TIMEOUT:
+            ESP_LOGE(TAG, "ESP_ERR_TIMEOUT: Таймаут ожидания операции (например, на шине SPI)");
+            break;
+        case ESP_ERR_INVALID_RESPONSE:
+            ESP_LOGE(TAG, "ESP_ERR_INVALID_RESPONSE: Получен неверный или неожиданный ответ");
+            break;
+        case ESP_ERR_INVALID_CRC:
+            ESP_LOGE(TAG, "ESP_ERR_INVALID_CRC: Ошибка контрольной суммы (CRC)");
+            break;
+        default:
+            // ПРО-СОВЕТ: В ESP-IDF есть встроенная функция esp_err_to_name(), 
+            // которая переводит любой код ошибки в строку.
+            // Используем её для всех остальных (менее частых) кодов.
+            ESP_LOGE(TAG, "Неизвестная ошибка: %s (код: 0x%x)", esp_err_to_name(r), r);
+            break;
+    }
+}
+
 // Отправка дампа ВСЕГО буфера на HOST 
-static esp_err_t dump_ringbuf_to_usb_cdc(RingBuffModulData_t *rb)
+static esp_err_t dump_ringbuf_to_usb_cdc(DumpData_t *rb)
 {
-    if (rb->buffer == NULL) return ESP_FAIL ;
-    if (!tud_cdc_connected()) return ESP_ERR_INVALID_STATE;  // хост должен быть подключён
+    if (rb->buffer == NULL){
+        ESP_LOGE(TAG, "Ошибка: Кольцевой буфер не инициализирован (NULL)!");
+        return ESP_FAIL ;
+    }
+    if (!tud_cdc_connected()){
+        ESP_LOGE(TAG, "Ошибка: USB хост не подключён");
+        return ESP_ERR_INVALID_STATE;  
+    }
 
-    size_t count = get_elements_count(rb);
-    size_t idx = rb->tail;
+    size_t count = rb->count_elements;
+    size_t idx = RingBuffModulData.tail; //TODO
+    ESP_LOGI(TAG, "Начало выгрузки. Элементов в буфере: %u", rb->count_elements);
+ 
+    if (!tud_cdc_connected()) {
+        ESP_LOGE(TAG, "Обрыв связи USB в заголовке дампа!");
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint32_t ret;
+    tud_cdc_write_clear();
+    uint32_t available_space = tud_cdc_write_available();
+    ret = tud_cdc_write(&rb->head_frames, sizeof(rb->head_frames) + sizeof(rb->count_elements));
+    vTaskDelay(pdMS_TO_TICKS(1));
+    if (ret < sizeof(rb->head_frames) + sizeof(rb->count_elements)) {
+        ESP_LOGE(TAG, "Ошибка: Head фрейма не был загружен в FIFO буфер");
+        return ESP_ERR_INVALID_STATE;  
+    }
+    tud_cdc_write_flush();
 
+    uint32_t bytes_written = 0;
     for (size_t i = 0; i < count; i++) {
         ModulData_t *frame = &rb->buffer[idx];
 
         // Отправляем сырые байты кадра
         uint32_t written = 0;
         uint32_t remaining = sizeof(ModulData_t);
-        uint8_t *ptr = frame->Tx_Buffer;
+        uint8_t *ptr = (uint8_t*)frame;
+        uint32_t timeout_counter = 0;
 
         while (remaining > 0) {
-            uint32_t chunk = tud_cdc_write(ptr, remaining);
-            written += chunk;
-            ptr += chunk;
-            remaining -= chunk;
-            tud_cdc_write_flush();
-            vTaskDelay(pdMS_TO_TICKS(1)); // даём TinyUSB время отправить
+            if (!tud_cdc_connected()) {
+                ESP_LOGE(TAG, "Обрыв связи USB во время передачи кадра %zu!", i);
+                return ESP_ERR_INVALID_STATE;
+            }
+            available_space = tud_cdc_write_available();
+            if (available_space > 0) {
+                uint32_t bytes_to_write = (remaining < available_space) ? remaining : available_space;
+                uint32_t chunk = tud_cdc_write(ptr, bytes_to_write);
+                
+                bytes_written += chunk;
+                written += chunk;
+                ptr += chunk;
+                remaining -= chunk;
+                
+                tud_cdc_write_flush();
+                timeout_counter = 0; // Сбрасываем таймаут, так как процесс идет
+            } else {
+                // Если буфер занят, ждем
+                vTaskDelay(pdMS_TO_TICKS(1));
+                timeout_counter++;
+
+                // Защита от зависания
+                if (timeout_counter >= USB_TX_TIMEOUT_MS) {
+                    ESP_LOGE(TAG, "Таймаут передачи USB! Хост перестал принимать данные. (Кадр %zu)", i);
+                    return ESP_ERR_TIMEOUT;
+                }
+            }
         }
 
-        idx = (idx + 1) % rb->cnt_cpyes;
+        idx = (idx + 1) % RingBuffModulData.cnt_cpyes; // TODO
     }
-
+    ESP_LOGI(TAG, "Успешная выгрузка завершена! Отправлено байт: %u кадров: %u", bytes_written, (bytes_written / sizeof(ModulData_t)));
     return ESP_OK;
 }
 
@@ -138,22 +262,66 @@ static void usb_sender_task(void *pvParameters)
 
 static void dump_task(void *pvParameters)
 {
+    BaseType_t xResult;
+    uint32_t parm = 0;
+
     while(1)
     {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); 
-        if (xSemaphoreTake(bufferMutex, portMAX_DELAY) == pdTRUE)
-        {
-            ESP_LOGI(TAG, "Start DUMP!");
-            if( dump_ringbuf_to_usb_cdc(&RingBuffModulData) != ESP_OK)
-            {
-                ESP_LOGE(TAG, "ESP has wrong whith USB send!");
-            }
-            xSemaphoreGive(bufferMutex);
-            ESP_LOGI(TAG, "END DUMP!");
+        parm = 0;
+        xResult = xTaskNotifyWait(0x00, UINT32_MAX, &parm, portMAX_DELAY);
+        if (xResult == pdTRUE){
 
-            memset(RingBuffModulData.buffer, 0x00, RingBuffModulData.size_byte);
-            RingBuffModulData.tail = 0;
-            RingBuffModulData.head = 0;
+            switch (parm)
+            {
+            case SEND_AVE_COMAND:
+
+                if (send_usb_aveFrame( (char*)&gFpgaAvrData, sizeof(gFpgaAvrData)) == ESP_OK)
+                {
+                    ESP_LOGI(TAG, "SEND AVE FRAME");
+                }else{
+                    ESP_LOGI(TAG, "send_usb_aveFrame: ERROR!");
+                }
+
+                /* code */
+                break;
+
+            case SEND_DUMP_COMAND:
+                
+                if (xSemaphoreTake(bufferMutex, portMAX_DELAY) == pdTRUE)
+                {
+                    esp_err_t err = ESP_ERR_INVALID_STATE;
+                    TickType_t tick_exit = xTaskGetTickCount();
+
+                    while( err != ESP_OK )
+                    {
+                        if((xTaskGetTickCount() - tick_exit) > 3000)
+                        {
+                            ESP_LOGI(TAG, "Dump timeout!");
+                            break;
+                        }
+                        ESP_LOGI(TAG, "Start DUMP!");
+                        DumpData_t DumpData = {0}; 
+                        DumpData.head_frames = ID_DUMP_FRAME_START;
+                        DumpData.count_elements = (uint32_t)get_elements_count(&RingBuffModulData);
+                        DumpData.buffer = RingBuffModulData.buffer;
+                        DumpData.time_event = (uint32_t)xTaskGetTickCount();
+                        DumpData.tail_frames = ID_TAIL_FRMES;
+                        err = dump_ringbuf_to_usb_cdc(&DumpData); 
+
+                        ESP_LOGI(TAG, "END DUMP!");
+
+                        memset(RingBuffModulData.buffer, 0x00, RingBuffModulData.size_byte);
+                        RingBuffModulData.tail = 0;
+                        RingBuffModulData.head = 0;
+                        tick_exit = xTaskGetTickCount();
+                    }
+                }
+                xSemaphoreGive(bufferMutex);
+                break;
+            
+            default:
+                break;
+            }
         }
         // После дампа — "глотаем" все уведомления которые накопились
         // пока шёл дамп, чтобы не делать повторный дамп сразу
@@ -309,7 +477,7 @@ esp_err_t serial_bridge_init(void)
         ESP_LOGE(TAG, "Failed to create USB SENDER task");
     }
     
-    if( xTaskCreatePinnedToCore(dump_task, "dump_sender_task", 2 * 1024, NULL, 7, &DumpTask_Handler, 1) != pdPASS )
+    if( xTaskCreatePinnedToCore(dump_task, "dump_sender_task", 6 * 1024, NULL, 7, &DumpTask_Handler, 1) != pdPASS )
     {
         ESP_LOGE(TAG, "Failed to create DUMP SSENDER task");
     }

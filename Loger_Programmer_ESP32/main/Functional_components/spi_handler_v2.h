@@ -44,10 +44,6 @@
  * Пины SPI3 (используются при CONFIG_SPI_SLAVE_SPI3_ENABLED)
  * ---------------------------------------------------------------------------- */
 #if CONFIG_SPI_SLAVE_SPI3_ENABLED
-// #define SPI_SLAVE_SPI3_GPIO_MOSI  35
-// #define SPI_SLAVE_SPI3_GPIO_MISO  36
-// #define SPI_SLAVE_SPI3_GPIO_SCLK  9
-// #define SPI_SLAVE_SPI3_GPIO_CS    14
 #define SPI_SLAVE_SPI3_GPIO_MOSI  21
 #define SPI_SLAVE_SPI3_GPIO_MISO  38
 #define SPI_SLAVE_SPI3_GPIO_SCLK  9

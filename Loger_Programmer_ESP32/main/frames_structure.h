@@ -105,7 +105,6 @@ typedef struct {
 // Эту структуру целиком отправляем/принимаем по SPI
 typedef struct {
     uint32_t start_marker;        // 0xAA55AA55 или подобный Magic Number
-    uint32_t packet_counter;      // Инкрементальный счетчик для отладки
 
     // Вложенные структуры данных (порядок важен!)
     GroupStatus_t  status;        // 11 регистров = 2 байта
@@ -125,8 +124,16 @@ typedef struct {
 
 typedef union {
     FpgaToEspPacket_t packet;
-    uint8_t Tx_Buffer[sizeof(FpgaToEspPacket_t)];
+    uint8_t Tx_Buffer[sizeof(FpgaToEspPacket_t)];  
 }ModulData_t;
+
+typedef struct {
+	uint32_t head_frames;
+	uint32_t count_elements;
+	ModulData_t *buffer;
+	uint32_t time_event;
+	uint32_t tail_frames;
+}DumpData_t;
 
 
 

@@ -21,6 +21,9 @@ static const char *TAG_RMS = "LOG_AVG";
 // Переменная кольцевого буфера 
 RingBuffModulData_t RingBuffModulData;
 
+// Глобальная структура для средних значений по данным из кольцевого буфера
+FpgaRmsData_t gFpgaAvrData;
+
 SemaphoreHandle_t bufferMutex = NULL; // Мутекс для защиты памяти
 
 //Состояние кольцевого буфера
@@ -28,9 +31,6 @@ RingBuffStatus_t RingBuffStatus = RINGBUF_OK;
 
 // Состояние UPS
 UpsRegisterFlags_t UpsRegisterFlags;
-
-// Глобальная структура для средних значений по данным из кольцевого буфера
-FpgaRmsData_t gFpgaAvrData;
 
 // Хендел задачи логера 
 static TaskHandle_t TaskHeandler_Logger;
@@ -233,7 +233,6 @@ RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData)
     if(xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(10)) == pdTRUE)                                     
     {
         size_t next_head = (RingBuffModulData.head + 1) % RingBuffModulData.cnt_cpyes;
-
         if(next_head == RingBuffModulData.tail)
         {
             sub_sample_from_average(&RingBuffModulData.buffer[RingBuffModulData.tail]);
@@ -508,11 +507,18 @@ void time_calculate_DEBUG(RingBuffModulData_t *rb)
 
 static void logger_proc_task(void *pvParameters)
 {
-    uint64_t last_print_ms = 0;
-    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    const TickType_t xFreqCalcMovAverage =  pdMS_TO_TICKS(PERIOD_MS_MOV_AVRAGE);
+    const TickType_t xFreqSendFrames =  pdMS_TO_TICKS(PERIOD_MS_SAND_FRAMES);
+    const TickType_t xFreqDebugPrint =  pdMS_TO_TICKS(PERIOD_MS_DEBUG_PRINT);
+
+    TickType_t xLastCalcMovAverage = xTaskGetTickCount();
+    TickType_t xLastSendFrames = xTaskGetTickCount();
+    TickType_t xLastDebugPrint = xTaskGetTickCount();
+
 
     for(;;)
     {
+        TickType_t xCurrentTick = xTaskGetTickCount();
         /* ── Безопасная точка остановки ──────────────────────────────────
          * Мьютекс НЕ захвачен. Проверяем уведомление от logger_suspend().
          * ulTaskNotifyTake(pdTRUE, 0) — неблокирующая проверка:
@@ -526,31 +532,47 @@ static void logger_proc_task(void *pvParameters)
             /* ── возобновление после vTaskResume() ── */
             ESP_LOGI(TAG, "Logger: resumed");
         }
-
-        if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+        if ( (xCurrentTick - xLastCalcMovAverage) >= xFreqCalcMovAverage )
         {
-            calculate_moving_average_from_buffer();
-            xSemaphoreGive(bufferMutex);
-            // UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
-            // ESP_LOGI(TAG, "logger stack free: %u bytes", (unsigned)(hwm * sizeof(StackType_t)));
-        } 
+            xLastCalcMovAverage = xTaskGetTickCount();
+            if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+            {
+                calculate_moving_average_from_buffer();
+                xSemaphoreGive(bufferMutex);
+                // UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
+                // ESP_LOGI(TAG, "logger stack free: %u bytes", (unsigned)(hwm * sizeof(StackType_t)));
+            } 
+        }
 
-        if(RingBuffModulData.head > 0)
+        if (RingBuffModulData.head > 0)
         {
             if(RingBuffModulData.buffer[RingBuffModulData.head - 1].packet.alarms.raw)
             {
-                xTaskNotifyGive(DumpTask_Handler);
-                ESP_LOGI(TAG, "Send Task Notify");
+                xTaskNotify(DumpTask_Handler, SEND_DUMP_COMAND, eSetValueWithOverwrite);
+                ESP_LOGI(TAG, "Send Task DUMP Notify");
             }
         }
+/*      TODO   (часть для отправки фрейма со средними значениями нужно сдлетьа в синхронном режиме для USB устройств)
+        if ( (xCurrentTick - xLastSendFrames) >= xFreqSendFrames )
+        {
+            xLastSendFrames = xTaskGetTickCount();
+            if(RingBuffModulData.head > 0)
+            {
+                if(RingBuffModulData.buffer[RingBuffModulData.head - 1].packet.alarms.raw == (uint16_t)0x00)
+                {
+                    xTaskNotify(DumpTask_Handler, SEND_AVE_COMAND, eSetValueWithOverwrite);
+                    ESP_LOGI(TAG, "Send Task AVE Notify");
+                }
+            }
+        }
+        */
         // Участок для логирования информации раз в 1 сек. 
         /////////////////////////////////////////////////////////////////////////////////////////////
-        now_ms = (uint32_t)(esp_timer_get_time() / 1000);
-        if (now_ms - last_print_ms >= 1000) {
-            last_print_ms = now_ms;
+        if ( (xCurrentTick - xLastDebugPrint) >= xFreqDebugPrint ) {
+            xLastDebugPrint = xTaskGetTickCount();
             FpgaRmsData_t snapshot;
             memcpy(&snapshot, &gFpgaAvrData, sizeof(snapshot));
-            //time_calculate_DEBUG(&RingBuffModulData);
+            time_calculate_DEBUG(&RingBuffModulData);
             //logger_print_avg_data(&snapshot);
         }
         /////////////////////////////////////////////////////////////////////////////////////////////

@@ -241,12 +241,12 @@ void eub_vendord_start(void)
     static bool init = false;
 
     if (!init) {
-        if (xTaskCreate(usb_send_task,
+        if (xTaskCreatePinnedToCore(usb_send_task,
                         "usb_send_task",
                         4 * 1024,
                         NULL,
                         DEBUG_PROBE_TASK_PRI - 1,
-                        &s_eub_vendord_itf.usb_tx_task_handle) != pdPASS) {
+                        &s_eub_vendord_itf.usb_tx_task_handle, 0) != pdPASS) {
             ESP_LOGE(TAG, "Cannot create USB send task!");
             eub_abort();
         }

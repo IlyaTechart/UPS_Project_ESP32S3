@@ -11,6 +11,14 @@
 #error "The number of frames must be greater than the number of unused frames in the ring buffer."
 #endif
 
+#define SEND_AVE_COMAND    (uint32_t)0X01
+#define SEND_DUMP_COMAND   (uint32_t)0X02
+
+#define PERIOD_MS_MOV_AVRAGE   9
+#define PERIOD_MS_SAND_FRAMES  10000
+#define PERIOD_MS_DEBUG_PRINT  1000
+
+
 typedef enum{
     RINGBUF_OK,
     RINGBUF_ERR,
@@ -118,7 +126,6 @@ typedef struct{
 
 }RingBuffModulData_t;
 
-
 // Структура для хранения средних значений по тем же группам,
 // что и в основном пакете (без служебных полей заголовка/CRC)
 typedef struct {
@@ -129,13 +136,10 @@ typedef struct {
     GroupBattery_t battery;
 } FpgaRmsData_t;
 
-// Структура дампа отправляемого на HOST при аварии
-typedef struct {
-    uint32_t magic;        // 0xDEADBEEF — маркер начала дампа
-    uint32_t frame_count;  // сколько кадров будет
-    uint32_t frame_size;   // sizeof(ModulData_t)
-    uint32_t timestamp_ms; // время события
-} DumpHeader_t;
+
+
+extern RingBuffModulData_t RingBuffModulData;
+extern FpgaRmsData_t gFpgaAvrData;
 
 void logger_Inint(void);
 void logger_suspend(void);
@@ -144,5 +148,3 @@ void logger_resume(void);
 size_t get_elements_count(RingBuffModulData_t *rb);
 RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData);
 
-// Глобальная структура с RMS-значениями по данным от FPGA
-extern FpgaRmsData_t gFpgaAvrData;

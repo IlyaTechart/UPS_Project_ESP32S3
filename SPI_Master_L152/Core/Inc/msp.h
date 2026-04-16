@@ -125,7 +125,6 @@ typedef struct {
 // Эту структуру целиком отправляем/принимаем по SPI
 typedef struct {
     uint32_t start_marker;        // 0xAA55AA55 или подобный Magic Number
-    uint32_t packet_counter;      // Инкрементальный счетчик для отладки
 
     // Вложенные структуры данных (порядок важен!)
     GroupStatus_t  status;        // 11 регистров = 2 байта
