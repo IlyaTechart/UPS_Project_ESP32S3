@@ -193,6 +193,7 @@ static esp_err_t dump_ringbuf_to_usb_cdc(DumpData_t *rb)
 
         idx = (idx + 1) % RingBuffModulData.cnt_cpyes; // TODO
     }
+    tud_cdc_write_clear();
     ESP_LOGI(TAG, "Успешная выгрузка завершена! Отправлено байт: %u кадров: %u", bytes_written, (bytes_written / sizeof(ModulData_t)));
     return ESP_OK;
 }
@@ -307,6 +308,7 @@ static void dump_task(void *pvParameters)
                         DumpData.time_event = (uint32_t)xTaskGetTickCount();
                         DumpData.tail_frames = ID_TAIL_FRMES;
                         err = dump_ringbuf_to_usb_cdc(&DumpData); 
+                        if(err != ESP_OK) break;
 
                         ESP_LOGI(TAG, "END DUMP!");
 
