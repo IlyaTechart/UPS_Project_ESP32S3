@@ -120,95 +120,10 @@ static void error_handler(esp_err_t r) {
     }
 }
 
-// Отправка дампа ВСЕГО буфера на HOST 
-// static esp_err_t dump_ringbuf_to_usb_cdc(DumpData_t *rb)
-// {
-//     if (rb->buffer == NULL){
-//         ESP_LOGE(TAG, "Ошибка: Кольцевой буфер не инициализирован (NULL)!");
-//         return ESP_FAIL ;
-//     }
-//     if (!tud_cdc_connected()){
-//         ESP_LOGE(TAG, "Ошибка: USB хост не подключён");
-//         return ESP_ERR_INVALID_STATE;  
-//     }
-
-//     size_t count = rb->count_elements;
-//     size_t idx = RingBuffModulData.tail; //TODO
-//     ESP_LOGI(TAG, "Начало выгрузки. Элементов в буфере: %u", rb->count_elements);
-
-//     if (!tud_cdc_connected()) {
-//         ESP_LOGE(TAG, "Обрыв связи USB в заголовке дампа!");
-//         return ESP_ERR_INVALID_STATE;
-//     }
-//     uint32_t ret;
-//     tud_cdc_write_clear();
-//     uint32_t available_space = tud_cdc_write_available();
-//         ret = tud_cdc_write(&rb->head_frames, sizeof(rb->head_frames) + sizeof(rb->count_elements));
-//     if (ret < sizeof(rb->head_frames) + sizeof(rb->count_elements)) {
-//         ESP_LOGE(TAG, "Ошибка: Head фрейма не был загружен в FIFO буфер");
-//         return ESP_ERR_INVALID_STATE;  
-//     }
-//     tud_cdc_write_flush();
-
-//     uint32_t bytes_written = 0;
-//     for (size_t i = 0; i < count; i++) {
-//         ModulData_t *frame = &rb->buffer[idx];
-
-//         // Отправляем сырые байты кадра
-//         uint32_t written = 0;
-//         uint32_t remaining = sizeof(ModulData_t);
-//         uint8_t *ptr = (uint8_t*)frame;
-//         uint32_t timeout_counter = 0;
-
-//         while (remaining > 0) {
-//             if (!tud_cdc_connected()) {
-//                 ESP_LOGE(TAG, "Обрыв связи USB во время передачи кадра %zu!", i);
-//                 return ESP_ERR_INVALID_STATE;
-//             }
-//             available_space = tud_cdc_write_available();
-//             if (available_space > 0) {
-//                 uint32_t bytes_to_write = (remaining < available_space) ? remaining : available_space;
-//                 uint32_t chunk = tud_cdc_write(ptr, bytes_to_write);
-                
-//                 bytes_written += chunk;
-//                 written += chunk;
-//                 ptr += chunk;
-//                 remaining -= chunk;
-                
-//                 tud_cdc_write_flush();
-//                 timeout_counter = 0; // Сбрасываем таймаут, так как процесс идет
-//             } else {
-//                 // Если буфер занят, ждем
-//                 vTaskDelay(pdMS_TO_TICKS(1));
-//                 timeout_counter++;
-
-//                 // Защита от зависания
-//                 if (timeout_counter >= USB_TX_TIMEOUT_MS) {
-//                     ESP_LOGE(TAG, "Таймаут передачи USB! Хост перестал принимать данные. (Кадр %zu)", i);
-//                     return ESP_ERR_TIMEOUT;
-//                 }
-//             }
-//         }
-
-//         idx = (idx + 1) % RingBuffModulData.cnt_cpyes; // TODO
-//     }
-
-//     ret = tud_cdc_write(&rb->tail_frames, sizeof(rb->tail_frames));
-//     if (ret < sizeof(rb->tail_frames)) {
-//         ESP_LOGE(TAG, "Ошибка: Tail ID не был загружен в FIFO буфер фрейма");
-//         return ESP_ERR_INVALID_STATE;  
-//     }
-//     tud_cdc_write_flush();
-//     ESP_LOGI(TAG, "Успешная выгрузка завершена! Отправлено полезных байт: %u в которых кадров: %u", bytes_written, (bytes_written / sizeof(ModulData_t)));
-//     return ESP_OK;
-// }
-
-
-
-/// @brief 
-/// @param data 
-/// @param len 
-/// @return 
+/// @brief Отправка данных битовым полем нужной длины
+/// @param data Указатель на отправляемые данные
+/// @param len Длина отправляемых данных 
+/// @return При успешном завершении вернёт - ESP_OK, при тайм-ауте - ESP_ERR_TIMEOUT, при обрыве цпи во время передачи - ESP_ERR_INVALID_STATE
 static esp_err_t usb_cdc_write_blocking(const uint8_t *data, size_t len) 
 {
     size_t written = 0;
@@ -247,7 +162,9 @@ static esp_err_t usb_cdc_write_blocking(const uint8_t *data, size_t len)
     return ESP_OK;
 }
 
-// --- 2. Основная функция выгрузки дампа ---
+/// @brief Функция отправки дампа 
+/// @param rb Указатель на кольцевой буфер дампа 
+/// @return При успешной передачи вернёт - ESP_OK
 static esp_err_t dump_ringbuf_to_usb_cdc(DumpData_t *rb)
 {
     if (rb == NULL || rb->buffer == NULL){
@@ -264,7 +181,6 @@ static esp_err_t dump_ringbuf_to_usb_cdc(DumpData_t *rb)
     size_t idx = RingBuffModulData.tail;
     ESP_LOGI(TAG, "Начало выгрузки. Элементов: %zu", count);
 
-    // Очищаем мусор, который мог остаться в TX FIFO с прошлых разов
     tud_cdc_write_clear();
 
     esp_err_t err;
@@ -273,7 +189,7 @@ static esp_err_t dump_ringbuf_to_usb_cdc(DumpData_t *rb)
     err = usb_cdc_write_blocking((uint8_t*)&rb->head_frames, sizeof(rb->head_frames));
     if (err != ESP_OK) return err;
 
-    // 2. Отправляем count_elements (БЕЗОПАСНО: отдельным вызовом)
+    // 2. Отправляем count_elements 
     err = usb_cdc_write_blocking((uint8_t*)&rb->count_elements, sizeof(rb->count_elements));
     if (err != ESP_OK) return err;
 
@@ -293,7 +209,7 @@ static esp_err_t dump_ringbuf_to_usb_cdc(DumpData_t *rb)
         idx = (idx + 1) % RingBuffModulData.cnt_cpyes;
 
         // Опционально: сбрасывать Watchdog (WDT), если дамп огромный (1МБ+)
-        // vTaskDelay(0) может помочь, если таск ест 100% ядра долгое время
+        vTaskDelay(0) //может помочь, если таск ест 100% ядра долгое время
     }
 
     // 4. Отправляем tail_frames
