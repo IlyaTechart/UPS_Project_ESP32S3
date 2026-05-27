@@ -6,6 +6,7 @@
 
 #define SIZE_OF_CIRCULAR_BUFFER  10000  //Колличесвто структур-кадров которые будут храниться в кольцевом буфере
 #define NUMBER_OF_REMAINING_EMPTY  5
+#define START_MARKER_ID          0xFFAA2211
 
 #if (SIZE_OF_CIRCULAR_BUFFER - 1) <= NUMBER_OF_REMAINING_EMPTY
 #error "The number of frames must be greater than the number of unused frames in the ring buffer."

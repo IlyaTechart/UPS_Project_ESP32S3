@@ -12,7 +12,7 @@
 /* ----------------------------------------------------------------------------
  * Структуры пакета (ModulData_t и входящие в неё — не трогаем)
  * ---------------------------------------------------------------------------- */
-#pragma pack(push, 1)
+#pragma pack(push, 1) // Альтернатива __attribute__((packed))
 
 // --- Группа 1: Статусы (Регистры 10001-10011) ---
 typedef struct {
@@ -133,7 +133,7 @@ typedef struct {
 	ModulData_t *buffer;
 	uint32_t time_event;
 	uint32_t tail_frames;
-}DumpData_t;
+}__attribute__((packed))DumpData_t;
 
 
 

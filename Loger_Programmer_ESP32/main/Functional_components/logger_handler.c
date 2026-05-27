@@ -15,7 +15,7 @@
 #include "logger_handler.h"
 
 
-char *TAG = "LOGER";
+char *TAG = "LOGER:";
 static const char *TAG_RMS = "LOG_AVG";
 
 // Переменная кольцевого буфера 
@@ -435,7 +435,7 @@ static void print_error_flag_frame(RingBuffModulData_t *rb, UpsRegisterFlags_t *
     size_t last_idx = (rb->head + rb->cnt_cpyes - 1) % rb->cnt_cpyes;
     FpgaToEspPacket_t *pkt = &rb->buffer[last_idx].packet;
 
-    if (pkt->start_marker != 0xAA55AA55u) {
+    if (pkt->start_marker != START_MARKER_ID) {
         return;
     }
 
@@ -552,7 +552,7 @@ static void logger_proc_task(void *pvParameters)
                 ESP_LOGI(TAG, "Send Task DUMP Notify");
             }
         }
-/*      TODO   (часть для отправки фрейма со средними значениями нужно сдлетьа в синхронном режиме для USB устройств)
+/*      TODO   (часть для отправки фрейма со средними значениями нужно сделать в синхронном режиме для USB устройств)
         if ( (xCurrentTick - xLastSendFrames) >= xFreqSendFrames )
         {
             xLastSendFrames = xTaskGetTickCount();

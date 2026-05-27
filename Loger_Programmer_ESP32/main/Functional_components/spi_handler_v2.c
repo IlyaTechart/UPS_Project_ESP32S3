@@ -521,7 +521,7 @@ static void spi_slave_gpio_init_spi3(void)
 static void spi_slave_print_ups_packet(volatile FpgaToEspPacket_t *pkt, const char *source_tag)
 {
 
-    if (pkt->start_marker != 0xAA55AA55) {
+    if (pkt->start_marker !=  START_MARKER_ID) {
         ESP_LOGW(TAG_UPS, "[%s] Bad start marker 0x%08lX", source_tag, (unsigned long)pkt->start_marker);
     }
 

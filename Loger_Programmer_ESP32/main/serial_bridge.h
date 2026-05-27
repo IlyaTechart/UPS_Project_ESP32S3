@@ -21,8 +21,7 @@ extern "C" {
 
 #define ID_TAIL_FRMES        (const uint32_t)0x55AA55AA
 
-
-#define USB_TX_TIMEOUT_MS 500 
+#define USB_TX_TIMEOUT_MS 2000 // 2 секунды на ожидание хоста (важно для 1 МБ)
 
 /**
  * @brief Initialize serial bridge
