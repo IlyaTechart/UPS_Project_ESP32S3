@@ -33,16 +33,6 @@ typedef struct {
 	uint32_t tail_frames;
 }__attribute__((packed))Package_t;
 
-/// @brief Пакет средних значений для Send_Usb_Ave_Frame
-typedef struct {
-    uint32_t head_frames;
-    uint32_t count_elements;
-    void *data;
-    uint32_t time_event;
-    uint32_t tail_frames;
-} AVE_SendlerHendle_t;
-
-esp_err_t Send_Usb_Ave_Frame(AVE_SendlerHendle_t *AVE_Sendler);
 
 /**
  * @brief Initialize serial bridge

@@ -16,7 +16,7 @@
 #define SEND_DUMP_COMAND   (uint32_t)0X02
 
 #define PERIOD_MS_MOV_AVRAGE   1000
-#define PERIOD_MS_SAND_FRAMES  10000
+#define PERIOD_MS_SAND_FRAMES  1000
 #define PERIOD_MS_DEBUG_PRINT  1000
 
 
@@ -98,20 +98,9 @@ typedef struct {
     GroupBattery_x64_t battery;
 } AveSummator_t;
 
-/// @brief Результат усреднения для USB (компактный payload)
-typedef struct {
-    GroupStatus_t  status;
-    GroupAlarms_t  alarms;
-    GroupInput_t   input;
-    GroupOutput_t  output;
-    GroupBattery_t battery;
-} FpgaRmsData_t;
 
-extern AveSummator_t AVESummator;
+extern RingBuffModulData_t RingBuffModulData;
 extern ModulData_t ModulDataFromExtend;
-
-void logger_pack_ave_for_usb(FpgaRmsData_t *out);
-
 
 
 

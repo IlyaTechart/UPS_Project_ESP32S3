@@ -34,7 +34,6 @@ QueueHandle_t queue_serial_RX;
 
 TaskHandle_t DumpTask_Handler;
 
-//extern RingBuffModulData_t RingBuffModulData;
 extern SemaphoreHandle_t bufferMutex;
 
 static RingbufHandle_t usb_sendbuf;
@@ -132,7 +131,7 @@ static esp_err_t usb_cdc_write_blocking(const uint8_t *data, size_t len)
 /// @brief Функция отправки сообщения со средними значениями по USB 
 /// @param AVE_Sendler - Указатель на отправляемую структуру в которой упкован список 
 /// @return 
-esp_err_t send_usb_ave_frame(AVE_SendlerHendle_t *AVE_Sendler){
+esp_err_t send_usb_ave_frame(Package_t *AVE_Sendler){
 
     if (AVE_Sendler == NULL){
         ESP_LOGE(TAG, "Ошибка: Указатель на структуру срендних значений (NULL)!");
@@ -154,11 +153,11 @@ esp_err_t send_usb_ave_frame(AVE_SendlerHendle_t *AVE_Sendler){
     err = usb_cdc_write_blocking((uint8_t*)&AVE_Sendler->count_elements , sizeof(AVE_Sendler->count_elements));
     if (err != ESP_OK) return err;
 
-    err = usb_cdc_write_blocking((uint8_t*)AVE_Sendler->data , sizeof(FpgaRmsData_t));
+    err = usb_cdc_write_blocking((uint8_t*)AVE_Sendler->buffer , sizeof(ModulData_t));
     if (err != ESP_OK) return err;
 
-    err = usb_cdc_write_blocking((uint8_t*)&AVE_Sendler->time_event , sizeof(AVE_Sendler->time_event));
-    if (err != ESP_OK) return err;
+    // err = usb_cdc_write_blocking((uint8_t*)&AVE_Sendler->time_event , sizeof(AVE_Sendler->time_event));
+    // if (err != ESP_OK) return err;
 
      err = usb_cdc_write_blocking((uint8_t*)&AVE_Sendler->tail_frames , sizeof(AVE_Sendler->tail_frames));
     if (err != ESP_OK) return err;
@@ -170,7 +169,7 @@ esp_err_t send_usb_ave_frame(AVE_SendlerHendle_t *AVE_Sendler){
 /// @brief Функция отправки дампа 
 /// @param rb Указатель на кольцевой буфер дампа 
 /// @return При успешной передачи вернёт - ESP_OK
-static esp_err_t dump_ringbuf_to_usb_cdc(DumpData_t *rb)
+static esp_err_t dump_ringbuf_to_usb_cdc(Package_t *rb)
 {
     if (rb == NULL || rb->buffer == NULL){
         ESP_LOGE(TAG, "Ошибка: Кольцевой буфер не инициализирован (NULL)!");
@@ -307,17 +306,15 @@ static void dump_task(void *pvParameters)
             switch (parm)
             {
             case SEND_AVE_COMAND:
-                {
-                static FpgaRmsData_t ave_usb_payload;
-                AVE_SendlerHendle_t ave_sender;
 
+                Package_t ave_sender;
                 TickType_t tick_exit = xTaskGetTickCount();
-                logger_pack_ave_for_usb(&ave_usb_payload);
 
+                ave_sender.buffer = (ModulData_t*)calloc( 1, sizeof(ModulData_t));
+                memcpy(ave_sender.buffer, &ModulDataFromExtend, sizeof(ModulData_t));
                 ave_sender.head_frames = ID_AVE_FRAME_START;
                 ave_sender.time_event = (uint32_t)tick_exit;
                 ave_sender.count_elements = 1;
-                ave_sender.data = &ave_usb_payload;
                 ave_sender.tail_frames = ID_TAIL_FRMES;
 
                 if (send_usb_ave_frame(&ave_sender) == ESP_OK)
@@ -326,8 +323,7 @@ static void dump_task(void *pvParameters)
                 }else{
                     ESP_LOGI(TAG, "send_usb_aveFrame: ERROR!");
                 }
-                }
-
+                free(ave_sender.buffer);
                 break;
 
             case SEND_DUMP_COMAND:

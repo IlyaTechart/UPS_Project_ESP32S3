@@ -19,13 +19,16 @@
 char *TAG = "LOGER:";
 static const char *TAG_RMS = "LOG_AVG";
 
+// Для дебага 
+RingBuffStatus_t RingBuffStatus;
+
 // Переменная кольцевого буфера 
 RingBuffModulData_t RingBuffModulData;
 
 // Переменная сумматора (накопление в uint64)
 AveSummator_t AVESummator;
 
-// Буфер кадров в который копируется данные из расширенного буфера x64, сюда 
+// Буфер кадров в который копируется данные из расширенного буфера uint64, сюда 
 ModulData_t ModulDataFromExtend = {0};
 
 // Мутекс для защиты памяти
@@ -244,19 +247,6 @@ static void calculate_moving_average(void)
     pkt->battery.backup_time      = (uint16_t)(AVESummator.battery.backup_time      / samples);
 }
 
-void logger_pack_ave_for_usb(FpgaRmsData_t *out)
-{
-    if (out == NULL) {
-        return;
-    }
-
-    out->status = ModulDataFromExtend.packet.status;
-    out->alarms = ModulDataFromExtend.packet.alarms;
-    out->input  = ModulDataFromExtend.packet.input;
-    out->output = ModulDataFromExtend.packet.output;
-    out->battery = ModulDataFromExtend.packet.battery;
-}
-
 RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData)
 {
     if(RingBuffModulData.buffer == NULL || bufferMutex == NULL) return RINGBUF_NULL_POINTER;
@@ -375,8 +365,7 @@ static void logger_proc_task(void *pvParameters)
         /////////////////////////////////////////////////////////////////////////////////////////////
         if ( (xCurrentTick - xLastDebugPrint) >= xFreqDebugPrint ) {
             xLastDebugPrint = xTaskGetTickCount();
-            FpgaRmsData_t snapshot;
-            logger_pack_ave_for_usb(&snapshot);
+
             time_calculate_DEBUG(&RingBuffModulData);
             //logger_print_avg_data(&snapshot);
         }
