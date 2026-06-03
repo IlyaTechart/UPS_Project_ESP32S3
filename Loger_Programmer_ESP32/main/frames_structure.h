@@ -127,13 +127,7 @@ typedef union {
     uint8_t Tx_Buffer[sizeof(FpgaToEspPacket_t)];  
 }ModulData_t;
 
-typedef struct {
-	uint32_t head_frames;
-	uint32_t count_elements;
-	ModulData_t *buffer;
-	uint32_t time_event;
-	uint32_t tail_frames;
-}__attribute__((packed))DumpData_t;
+
 
 
 

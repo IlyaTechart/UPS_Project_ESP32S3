@@ -22,6 +22,7 @@
 #include "debug_probe.h"
 #include "logger_handler.h"
 
+
 #define USB_SEND_RINGBUFFER_SIZE (2 * 1024)
 
 static const char *TAG = "serial_bridge";
@@ -35,46 +36,12 @@ TaskHandle_t DumpTask_Handler;
 
 //extern RingBuffModulData_t RingBuffModulData;
 extern SemaphoreHandle_t bufferMutex;
-//extern FpgaRmsData_t gFpgaAvrData;
 
 static RingbufHandle_t usb_sendbuf;
 static SemaphoreHandle_t usb_tx_requested = NULL;
 static SemaphoreHandle_t usb_tx_done = NULL;
 static esp_timer_handle_t state_change_timer;
 
-esp_err_t send_usb_aveFrame(char *buffer, uint32_t lenght){
-
-    char send_buff[lenght + 8];
-    uint32_t start_shot = ID_AVE_FRAME_START; 
-
-    if (buffer == NULL){
-        ESP_LOGE(TAG, "send_usb_aveFrame: Ошибка-нулевой указатель на буфер!(NULL)");
-        return ESP_FAIL ;
-    }
-    if (!tud_cdc_connected()){
-        ESP_LOGE(TAG, "Ошибка: USB хост не подключён");
-        return ESP_ERR_INVALID_STATE;  // хост должен быть подключён
-    }
-
-    // TODO
-    send_buff[0] = (start_shot & 0xFF);
-    send_buff[1] = (start_shot >> 8) & 0xFF;
-    send_buff[2] = (start_shot >> 16) & 0xFF;
-    send_buff[3] = (start_shot >> 24) & 0xFF;
-
-    memcpy(&send_buff[5], buffer, lenght);
-
-    for( uint16_t i = 0; i < lenght ; )
-    {
-        uint32_t writen_bytes = tud_cdc_write(send_buff, (lenght - i));
-        i += writen_bytes;
-        if(writen_bytes > 0) tud_cdc_write_flush();
-        
-        vTaskDelay(pdMS_TO_TICKS(1)); // даём TinyUSB время отправить
-    }
-
-    return ESP_OK;
-}
 
 static void error_handler(esp_err_t r) {
     switch (r) {
@@ -120,7 +87,7 @@ static void error_handler(esp_err_t r) {
     }
 }
 
-/// @brief Отправка данных битовым полем нужной длины
+/// @brief Отправка данных байтовым полем нужной длины
 /// @param data Указатель на отправляемые данные
 /// @param len Длина отправляемых данных 
 /// @return При успешном завершении вернёт - ESP_OK, при тайм-ауте - ESP_ERR_TIMEOUT, при обрыве цпи во время передачи - ESP_ERR_INVALID_STATE
@@ -161,6 +128,44 @@ static esp_err_t usb_cdc_write_blocking(const uint8_t *data, size_t len)
     }
     return ESP_OK;
 }
+
+/// @brief Функция отправки сообщения со средними значениями по USB 
+/// @param AVE_Sendler - Указатель на отправляемую структуру в которой упкован список 
+/// @return 
+esp_err_t send_usb_ave_frame(AVE_SendlerHendle_t *AVE_Sendler){
+
+    if (AVE_Sendler == NULL){
+        ESP_LOGE(TAG, "Ошибка: Указатель на структуру срендних значений (NULL)!");
+        return ESP_FAIL;
+    }
+    
+    if (!tud_cdc_connected()){
+        ESP_LOGE(TAG, "Ошибка: USB хост не подключён");
+        return ESP_ERR_INVALID_STATE;  
+    }
+
+    tud_cdc_write_clear();
+
+    esp_err_t err;
+
+    err = usb_cdc_write_blocking((uint8_t*)&AVE_Sendler->head_frames , sizeof(AVE_Sendler->head_frames));
+    if (err != ESP_OK) return err;
+
+    err = usb_cdc_write_blocking((uint8_t*)&AVE_Sendler->count_elements , sizeof(AVE_Sendler->count_elements));
+    if (err != ESP_OK) return err;
+
+    err = usb_cdc_write_blocking((uint8_t*)AVE_Sendler->data , sizeof(FpgaRmsData_t));
+    if (err != ESP_OK) return err;
+
+    err = usb_cdc_write_blocking((uint8_t*)&AVE_Sendler->time_event , sizeof(AVE_Sendler->time_event));
+    if (err != ESP_OK) return err;
+
+     err = usb_cdc_write_blocking((uint8_t*)&AVE_Sendler->tail_frames , sizeof(AVE_Sendler->tail_frames));
+    if (err != ESP_OK) return err;
+
+    return ESP_OK;
+}
+
 
 /// @brief Функция отправки дампа 
 /// @param rb Указатель на кольцевой буфер дампа 
@@ -209,7 +214,7 @@ static esp_err_t dump_ringbuf_to_usb_cdc(DumpData_t *rb)
         idx = (idx + 1) % RingBuffModulData.cnt_cpyes;
 
         // Опционально: сбрасывать Watchdog (WDT), если дамп огромный (1МБ+)
-        vTaskDelay(0) //может помочь, если таск ест 100% ядра долгое время
+        vTaskDelay(0); //может помочь, если таск ест 100% ядра долгое время
     }
 
     // 4. Отправляем tail_frames
@@ -302,15 +307,27 @@ static void dump_task(void *pvParameters)
             switch (parm)
             {
             case SEND_AVE_COMAND:
+                {
+                static FpgaRmsData_t ave_usb_payload;
+                AVE_SendlerHendle_t ave_sender;
 
-                if (send_usb_aveFrame( (char*)&gFpgaAvrData, sizeof(gFpgaAvrData)) == ESP_OK)
+                TickType_t tick_exit = xTaskGetTickCount();
+                logger_pack_ave_for_usb(&ave_usb_payload);
+
+                ave_sender.head_frames = ID_AVE_FRAME_START;
+                ave_sender.time_event = (uint32_t)tick_exit;
+                ave_sender.count_elements = 1;
+                ave_sender.data = &ave_usb_payload;
+                ave_sender.tail_frames = ID_TAIL_FRMES;
+
+                if (send_usb_ave_frame(&ave_sender) == ESP_OK)
                 {
                     ESP_LOGI(TAG, "SEND AVE FRAME");
                 }else{
                     ESP_LOGI(TAG, "send_usb_aveFrame: ERROR!");
                 }
+                }
 
-                /* code */
                 break;
 
             case SEND_DUMP_COMAND:
@@ -328,7 +345,7 @@ static void dump_task(void *pvParameters)
                             break;
                         }
                         ESP_LOGI(TAG, "Start DUMP!");
-                        DumpData_t DumpData = {0}; 
+                        Package_t DumpData = {0}; 
                         DumpData.head_frames = ID_DUMP_FRAME_START;
                         DumpData.count_elements = (uint32_t)get_elements_count(&RingBuffModulData);
                         DumpData.buffer = RingBuffModulData.buffer;

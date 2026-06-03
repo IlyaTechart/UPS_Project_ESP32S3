@@ -92,7 +92,7 @@ static void Func_manege(SetCommand_t STATE)
         {
             /* Задачи уже созданы, просто возобновляем */
             spi_slave_resume();
-            logger_resume();
+            //logger_resume();
             COMP_SET(COMP_TUSB | COMP_SPI | COMP_LOGGER);
             ESP_LOGI(TAG, "APP TO: LOGGER (resume)");
         }
@@ -137,7 +137,7 @@ static void Func_manege(SetCommand_t STATE)
         {
             /* Приостанавливаем задачи, память остаётся — без фрагментации */
             spi_slave_suspend();
-            logger_suspend();
+            //logger_suspend();
             COMP_CLEAR(COMP_SPI | COMP_LOGGER);
             /* Бит инициализации НЕ сбрасываем: память выделена, задачи живы (suspended) */
             ESP_LOGI(TAG, "Suspend: LOGGER");

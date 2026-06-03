@@ -17,7 +17,7 @@
 #include "esp_heap_caps.h"
 #include "logger_handler.h"
 #include "esp_timer.h"
-#include "functional_manager.h"
+//#include "functional_manager.h"
 
 #define CRC32_POLY  0xEDB88320
 #define TAG         "spi_slave_v2"

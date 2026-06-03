@@ -20,6 +20,7 @@
 #define PERIOD_MS_DEBUG_PRINT  1000
 
 
+
 typedef enum{
     RINGBUF_OK,
     RINGBUF_ERR,
@@ -30,20 +31,35 @@ typedef enum{
 }RingBuffStatus_t;           // Должен отражать состояние кольцевого буфера 
 
 
-/// @brief Структура кольцевого буфера 
 typedef struct{
-    ModulData_t *buffer;                // Буфер кадров
-    volatile size_t tail;               // Точка чтения 
-    volatile size_t head;               // Точка записи 
-    volatile size_t size_byte;          // Размер буфера 
-    volatile size_t cnt_cpyes;          // Количество копий
-    volatile size_t count;              // ТЕКУЩЕЕ количество элементов в буфере
-    volatile size_t cell_size;          // Размер одной ячейки (байт)
-    volatile bool is_full;              // Флаг переполнения
+    uint8_t grid_status        ;  // 10001: Состояние электросети на входе (0: Норма, 1: Авария)
+    uint8_t bypass_grid_status ;  // 10002: Состояние электросети на входе байпаса
+    uint8_t rectifier_status   ;  // 10003: Состояние выпрямителя (1: Работает, 0: Выкл)
+    uint8_t inverter_status    ;  // 10004: Состояние инвертора (1: Работает, 0: Выкл)
+    uint8_t pwr_via_inverter   ;  // 10005: Питание через инвертор (1: Да)
+    uint8_t pwr_via_bypass     ;  // 10006: Питание по байпас (1: Да)
+    uint8_t sync_status        ;  // 10007: Синхронизация инвертора и байпаса (0: Синхронизированы)
+    uint8_t load_mode          ;  // 10008: Режим питания нагрузки (1: Инвертор, 0: Байпас)
+    uint8_t sound_alarm        ;  // 10009: Аварийный звуковой сигнал (1: Включен)
+    uint8_t battery_status     ;  // 10010: Состояние АКБ (0: Заряд, 1: Разряд)
+    uint8_t ups_mode           ;  // 10011: Режим работы ИБП (0: Сеть, 1: Батарея)
 
-}RingBuffModulData_t;
 
+    uint8_t err_low_input_vol     ;   // 10012: Низкое напряжение на входе ИБП
+    uint8_t err_high_dc_bus       ;   // 10013: Высокое напряжение на DC шине
+    uint8_t err_low_bat_charge    ;   // 10014: Низкий заряд АКБ
+    uint8_t err_bat_not_conn      ;   // 10015: АКБ не подключены
+    uint8_t err_inv_fault         ;   // 10016: Неисправность инвертора
+    uint8_t err_inv_overcurrent   ;   // 10017: Перегрузка инвертора по току
+    uint8_t err_high_out_vol      ;   // 10018: Высокое напряжение на выходе ИБП
+    uint8_t err_fan_fault         ;   // 10019: Неисправность вентилятора
+    uint8_t err_replace_bat       ;   // 10020: Необходимо заменить АКБ
+    uint8_t err_rect_overheat     ;   // 10021: Перегрев выпрямителя
+    uint8_t err_inv_overheat      ;   // 10022: Перегрев инвертор
 
+}UpsRegisterFlags_t;
+
+// Для расчёта скользящего среднего 
 
 // --- Группа 3: Входные параметры (30001-30010) ---
 // Передаем как int, множители (x0.1 и т.д.) применяются при отображении
@@ -91,14 +107,29 @@ typedef struct {
 	uint64_t backup_time;         // 30033: Расчетное время автономии (x1 мин)
 } GroupBattery_x64_t;
 
-/// @brief Структура сумматора (uint64 для накопления скользящего среднего)
 typedef struct {
-    GroupInput_x64_t   input;
-    GroupOutput_x64_t  output;
-    GroupBattery_x64_t battery;
-} AveSummator_t;
+    GroupInput_x64_t   input;         // 80 байт 
+    GroupOutput_x64_t  output;        // 136 байт 
+    GroupBattery_x64_t battery;       // 48 байт
+} FPGA_mov_acrage_x64_t;              // Total = 264 байт 
 
-/// @brief Результат усреднения для USB (компактный payload)
+
+typedef struct{
+    ModulData_t *buffer;                // Буфер кадров
+    volatile size_t tail;               // Точка чтения 
+    volatile size_t head;               // Точка записи 
+    volatile size_t size_byte;          // Размер буфера 
+    volatile size_t cnt_cpyes;          // Количество копий
+    volatile size_t count;              // ТЕКУЩЕЕ количество элементов в буфере
+    volatile size_t cell_size;          // Размер одной ячейки (байт)
+    volatile bool is_full;              // Флаг переполнения
+
+    volatile FPGA_mov_acrage_x64_t FPGA_mov_averge;  // Накопительная сумма (размер типа должен исключать переполнение!)
+
+}RingBuffModulData_t;
+
+// Структура для хранения средних значений по тем же группам,
+// что и в основном пакете (без служебных полей заголовка/CRC)
 typedef struct {
     GroupStatus_t  status;
     GroupAlarms_t  alarms;
@@ -107,14 +138,26 @@ typedef struct {
     GroupBattery_t battery;
 } FpgaRmsData_t;
 
-extern AveSummator_t AVESummator;
-extern ModulData_t ModulDataFromExtend;
+typedef struct 
+{
+    uint32_t head_frames;
+	uint32_t count_elements;
+    FpgaRmsData_t* data;
+    uint32_t time_event;
+	uint32_t tail_frames;
+}AVE_SendlerHendle_t;
 
-void logger_pack_ave_for_usb(FpgaRmsData_t *out);
 
 
 
+
+extern RingBuffModulData_t RingBuffModulData;
+extern FpgaRmsData_t gFpgaAvrData;
 
 void logger_Inint(void);
+void logger_suspend(void);
+void logger_resume(void);
+
 size_t get_elements_count(RingBuffModulData_t *rb);
 RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData);
+
