@@ -56,6 +56,7 @@ UPS_Project_ESP32S3/
 ```bash
 git clone https://github.com/IlyaTechart/UPS_Project_ESP32S3.git
 cd UPS_Project_ESP32S3
+```
 
 ### 2. Сборка и прошивка ESP32-S3 (основной мост)
 
