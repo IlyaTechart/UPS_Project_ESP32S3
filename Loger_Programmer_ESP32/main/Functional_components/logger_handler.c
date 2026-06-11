@@ -39,6 +39,9 @@ extern TaskHandle_t DumpTask_Handler;
 // Хендел задачи логера 
 static TaskHandle_t TaskHeandler_Logger;
 
+
+extern void logger_print_one_frame(const ModulData_t *m, size_t frame_index);
+
 static void logger_proc_task(void *pvParameters);
 
 void logger_Inint(void)
@@ -62,7 +65,6 @@ void logger_Inint(void)
     RingBuffModulData.is_full = false;
 
     memset(&AVESummator, 0, sizeof(AVESummator));
-    memset(&ModulDataFromExtend, 0, sizeof(ModulDataFromExtend));
 
     if (xTaskCreatePinnedToCore(logger_proc_task, "logger", 8192, NULL, 5, &TaskHeandler_Logger, 1) != pdPASS) {        // Создаём задачу (стек 8KB — расчёт RMS + много ESP_LOGI)
         ESP_LOGE(TAG, "Failed to create LOGGER task");
@@ -192,9 +194,8 @@ void sub_sample_from_average(ModulData_t* ModulData)
 
 
 // Расчёт скользящего среднего по окну из последних выборок (суммы в AVESummator).
-static void calculate_moving_average(void)
+static void calculate_moving_average(FpgaToEspPacket_t *pkt)
 {
-    FpgaToEspPacket_t *pkt = &ModulDataFromExtend.packet;
 
     if (RingBuffModulData.buffer == NULL) {
         return;
@@ -245,6 +246,8 @@ static void calculate_moving_average(void)
     pkt->battery.dc_bus_voltage   = (uint16_t)(AVESummator.battery.dc_bus_voltage   / samples);
     pkt->battery.bat_current      = (uint16_t)(AVESummator.battery.bat_current      / samples);
     pkt->battery.backup_time      = (uint16_t)(AVESummator.battery.backup_time      / samples);
+
+    pkt->system_time_ms = xTaskGetTickCount();
 }
 
 RingBuffStatus_t RingBuffWrite(ModulData_t* ModulData)
@@ -334,7 +337,7 @@ static void logger_proc_task(void *pvParameters)
             xLastCalcMovAverage = xTaskGetTickCount();
             if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) == pdTRUE)
             {
-                calculate_moving_average();
+                calculate_moving_average(&ModulDataFromExtend.packet);
                 xSemaphoreGive(bufferMutex);
                 // UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
                 // ESP_LOGI(TAG, "logger stack free: %u bytes", (unsigned)(hwm * sizeof(StackType_t)));
@@ -365,6 +368,10 @@ static void logger_proc_task(void *pvParameters)
         /////////////////////////////////////////////////////////////////////////////////////////////
         if ( (xCurrentTick - xLastDebugPrint) >= xFreqDebugPrint ) {
             xLastDebugPrint = xTaskGetTickCount();
+            if(RingBuffModulData.head > 0)
+            {
+                    logger_print_one_frame(&RingBuffModulData.buffer[RingBuffModulData.head - 1], 1);
+            }
 
             time_calculate_DEBUG(&RingBuffModulData);
             //logger_print_avg_data(&snapshot);

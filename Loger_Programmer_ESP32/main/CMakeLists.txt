@@ -15,6 +15,7 @@ idf_component_register(SRCS "Functional_components/functional_manager.c"
                             "msc.c"
                             "eub_vendord.c"
                             "serial_bridge.c"
+                            "Functional_components/Debug_control.c"
                        REQUIRES ${dependencies}
                        PRIV_REQUIRES esp_wifi nvs_flash esp_http_server esp_netif esp_event json driver
                        LDFRAGMENTS "noflash.lf"

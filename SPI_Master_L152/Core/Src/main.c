@@ -27,7 +27,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#define TIME_DELAY 10
+#define TIME_DELAY 100
 
 /* USER CODE END PTD */
 
@@ -177,6 +177,7 @@ int main(void)
 		  Send_SPI_ZeroAlarms();
 		  HAL_Delay(TIME_DELAY);
 	  }
+
 
 //	  HAL_UART_Transmit(&huart2, uart_tx_buf, sizeof(uart_tx_buf), HAL_MAX_DELAY);
 //	  HAL_Delay(1000);

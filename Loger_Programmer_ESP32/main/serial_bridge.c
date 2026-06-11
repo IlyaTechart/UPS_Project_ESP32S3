@@ -297,6 +297,8 @@ static void dump_task(void *pvParameters)
     BaseType_t xResult;
     uint32_t parm = 0;
 
+    ModulData_t ModulData_SendAve;
+
     while(1)
     {
         parm = 0;
@@ -310,8 +312,8 @@ static void dump_task(void *pvParameters)
                 Package_t ave_sender;
                 TickType_t tick_exit = xTaskGetTickCount();
 
-                ave_sender.buffer = (ModulData_t*)calloc( 1, sizeof(ModulData_t));
-                memcpy(ave_sender.buffer, &ModulDataFromExtend, sizeof(ModulData_t));
+                memcpy(&ModulData_SendAve, &ModulDataFromExtend, sizeof(ModulData_t));
+                ave_sender.buffer = &ModulData_SendAve;
                 ave_sender.head_frames = ID_AVE_FRAME_START;
                 ave_sender.time_event = (uint32_t)tick_exit;
                 ave_sender.count_elements = 1;
@@ -323,7 +325,6 @@ static void dump_task(void *pvParameters)
                 }else{
                     ESP_LOGI(TAG, "send_usb_aveFrame: ERROR!");
                 }
-                free(ave_sender.buffer);
                 break;
 
             case SEND_DUMP_COMAND:
