@@ -201,10 +201,6 @@ static void calculate_moving_average(FpgaToEspPacket_t *pkt)
         return;
     }
 
-    if (get_elements_count(&RingBuffModulData) < (SIZE_OF_CIRCULAR_BUFFER - NUMBER_OF_REMAINING_EMPTY)) {
-        return;
-    }
-
     size_t samples = RingBuffModulData.count;
     if (samples == 0) {
         return;
@@ -370,7 +366,7 @@ static void logger_proc_task(void *pvParameters)
             xLastDebugPrint = xTaskGetTickCount();
             if(RingBuffModulData.head > 0)
             {
-                    logger_print_one_frame(&RingBuffModulData.buffer[RingBuffModulData.head - 1], 1);
+                    logger_print_one_frame(&ModulDataFromExtend, 1);
             }
 
             time_calculate_DEBUG(&RingBuffModulData);

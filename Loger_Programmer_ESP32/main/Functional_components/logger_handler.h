@@ -4,7 +4,7 @@
 #include "frames_structure.h"
 #include "wifi_control.h"
 
-#define SIZE_OF_CIRCULAR_BUFFER  1000  //Колличесвто структур-кадров которые будут храниться в кольцевом буфере
+#define SIZE_OF_CIRCULAR_BUFFER  10000  //Колличесвто структур-кадров которые будут храниться в кольцевом буфере
 #define NUMBER_OF_REMAINING_EMPTY  5
 #define START_MARKER_ID          0xFFAA2211
 
@@ -96,7 +96,7 @@ typedef struct {
     GroupInput_x64_t   input;
     GroupOutput_x64_t  output;
     GroupBattery_x64_t battery;
-} AveSummator_t;
+}  AveSummator_t;
 
 
 extern RingBuffModulData_t RingBuffModulData;
