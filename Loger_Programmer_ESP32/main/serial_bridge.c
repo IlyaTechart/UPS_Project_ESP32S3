@@ -369,6 +369,7 @@ static void dump_task(void *pvParameters)
         // После дампа — "глотаем" все уведомления которые накопились
         // пока шёл дамп, чтобы не делать повторный дамп сразу
         ulTaskNotifyTake(pdTRUE, 0); // — неблокирующий сброс
+        vTaskDelay(pdMS_TO_TICKS(5));
 
     }
     vTaskDelete(NULL);

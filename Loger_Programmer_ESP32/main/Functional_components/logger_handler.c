@@ -44,6 +44,8 @@ extern void logger_print_one_frame(const ModulData_t *m, size_t frame_index);
 
 static void logger_proc_task(void *pvParameters);
 
+static void emulator_task(void *pvParameters);
+
 void logger_Inint(void)
 {
     bufferMutex = xSemaphoreCreateMutex();        // Создаём мьютекс
@@ -67,6 +69,12 @@ void logger_Inint(void)
     memset(&AVESummator, 0, sizeof(AVESummator));
 
     if (xTaskCreatePinnedToCore(logger_proc_task, "logger", 8192, NULL, 5, &TaskHeandler_Logger, 1) != pdPASS) {        // Создаём задачу (стек 8KB — расчёт RMS + много ESP_LOGI)
+        ESP_LOGE(TAG, "Failed to create LOGGER task");
+    }else{
+        ESP_LOGI(TAG, "Logger Init Success");
+    }
+
+    if (xTaskCreatePinnedToCore(emulator_task, "logger", 4096, NULL, 2, &TaskHeandler_Logger, 1) != pdPASS) {        // Создаём задачу эмулятор устройства передающего пакеты по SPI 
         ESP_LOGE(TAG, "Failed to create LOGGER task");
     }else{
         ESP_LOGI(TAG, "Logger Init Success");
@@ -378,4 +386,73 @@ static void logger_proc_task(void *pvParameters)
         // в idl задачи не будет выделено время для сброса WDT 
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+}
+
+void SetValueInStruckt(ModulData_t *ups_data)
+{
+	ups_data->packet.start_marker = 0xFFAA2211;
+	//BOOL значения
+
+	ups_data->packet.alarms.raw = (uint16_t)(rand() % 65535);
+	ups_data->packet.status.raw = (uint16_t)(rand() % 65535);
+
+
+	// Генерируем входные значения
+	ups_data->packet.input.v_in_AB = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.input.v_in_BC = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.input.v_in_CA = 380 + (uint16_t)(rand() % 10) ;
+	ups_data->packet.input.v_bypass_A = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.input.v_bypass_B = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.input.v_bypass_C = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.input.i_in_A = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.input.i_in_B = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.input.i_in_C = 380 + (uint16_t)(rand() % 10);
+
+	// Генерируем выходные значения
+	ups_data->packet.output.v_out_A = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.output.v_out_B = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.output.v_out_C = 380 + (uint16_t)(rand() % 10);
+	ups_data->packet.output.freq_out = 50 + (uint16_t)(rand() % 3);
+	ups_data->packet.output.i_out_A = 10 + (uint16_t)(rand() % 2);
+	ups_data->packet.output.i_out_B = 10 + (uint16_t)(rand() % 2);
+	ups_data->packet.output.i_out_C = 10 + (uint16_t)(rand() % 2);
+	ups_data->packet.output.p_active_A = ups_data->packet.output.v_out_A * ups_data->packet.output.i_out_A;
+	ups_data->packet.output.p_active_B = ups_data->packet.output.v_out_B * ups_data->packet.output.i_out_B;
+	ups_data->packet.output.p_active_C = ups_data->packet.output.v_out_C * ups_data->packet.output.i_out_C;
+	ups_data->packet.output.p_apparent_A = ups_data->packet.output.v_out_A * ups_data->packet.output.i_out_A;
+	ups_data->packet.output.p_apparent_B = ups_data->packet.output.v_out_B * ups_data->packet.output.i_out_B;
+	ups_data->packet.output.p_apparent_C = ups_data->packet.output.v_out_C * ups_data->packet.output.i_out_C;
+	ups_data->packet.output.load_pct_A = 80 + (uint16_t)(rand() % 5);
+	ups_data->packet.output.load_pct_B = 80 + (uint16_t)(rand() % 5);
+	ups_data->packet.output.load_pct_C = 80 + (uint16_t)(rand() % 5);
+	ups_data->packet.output.event_count = 7 + (uint16_t)(rand() % 5);
+
+	// Генерация параметров АКБ
+	ups_data->packet.battery.bat_voltage = 120 + (uint16_t)(rand() % 5);
+	ups_data->packet.battery.bat_capacity = 80 + (uint16_t)(rand() % 5);
+	ups_data->packet.battery.bat_groups_count = 1000 + (uint16_t)(rand() % 10);
+	ups_data->packet.battery.dc_bus_voltage = 120 + (uint16_t)(rand() % 5);
+	ups_data->packet.battery.bat_current = 10 + (uint16_t)(rand() % 5);
+	ups_data->packet.battery.backup_time = 10 + (uint16_t)(rand() % 30);
+
+
+}
+
+static void emulator_task(void *pvParameters)
+{
+    TickType_t xLastWakeTime;
+    const TickType_t xFrequency = 100; // 100 мс = 10 Гц
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    ModulData_t ModulData;
+
+    for(;;)
+    {
+        SetValueInStruckt(&ModulData);
+        RingBuffWrite(&ModulData);
+        // Устанавливаем частоту работы задачи 
+        vTaskDelayUntil( &xLastWakeTime, xFrequency );
+    }
+
 }
